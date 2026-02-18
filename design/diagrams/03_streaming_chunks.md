@@ -1,5 +1,26 @@
 # Diagram: Streaming Chunks and Multimodal-ready Markers
 
+This topic is documented with two complementary views:
+- **DataFlow** diagram (Mermaid `flowchart`) showing structural data movement.
+- **Activity** diagram (Mermaid `sequenceDiagram`) showing message/event ordering.
+
+## Streaming chunks
+
+### DataFlow
+
+```mermaid
+flowchart TD
+  A[Agent] --> EB[(Event Bus)]
+  EB --> UI[Channel / UI]
+  A -->|ResponseChunkBegin| EB
+  A -->|ResponseChunk seq_no=1..N| EB
+  A -->|ResponseChunkEnd| EB
+  EB -->|Forward chunks| UI
+  UI -->|Render incrementally| UI
+```
+
+### Activity
+
 ```mermaid
 sequenceDiagram
   autonumber
