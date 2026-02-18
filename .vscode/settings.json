@@ -1,0 +1,9 @@
+{
+  "chat.instructionsFilesLocations": { ".github/instructions": true },
+  "chat.includeApplyingInstructions": true,
+
+  "chat.promptFilesLocations": { ".github/prompts": true },
+  "chat.promptFilesRecommendations": {
+    "bootstrap": true
+  }
+}

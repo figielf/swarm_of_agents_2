@@ -1,0 +1,24 @@
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Editor/IDE
+.idea/
+*.swp
+
+# Logs
+*.log
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node
+node_modules/
