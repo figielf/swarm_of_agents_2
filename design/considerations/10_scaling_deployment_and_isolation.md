@@ -36,7 +36,7 @@ The agentic swarm framework must support e-commerce traffic patterns characteriz
 
 ### Option B — Per-agent-type Kubernetes Deployments (recommended)
 
-Each agent type (e.g., `product-search-agent`, `order-tracking-agent`, `coordinator-agent`) is a separate Kubernetes Deployment with its own replica count, resource limits, and HPA configuration.
+Each agent type (e.g., `product-search-agent`, `order-tracking-agent`, `coordinator-agent`) is a separate Kubernetes Deployment with its own replica count, resource limits, and HPA configuration. Agent type identity and runtime configuration are defined by the agent's **AgentSpec** (see [considerations/17](17_agent_registry_and_discovery.md)). On startup, each replica registers its AgentSpec with the **Agent Registry**, making it discoverable by the Coordinator via the **Capability Registry** projection.
 
 **Pros:**
 - Independent scaling: hot agents (product search during flash sales) scale up without scaling everything.

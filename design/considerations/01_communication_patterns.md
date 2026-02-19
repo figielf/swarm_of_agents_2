@@ -27,7 +27,7 @@ Multi-agent systems require a communication topology that governs how agents dis
 
 ### Option A — Coordinator-only (orchestrator-managed)
 
-A central **Coordinator Agent** receives all user requests, decomposes them into sub-tasks, dispatches to specialist agents via the Event Bus, aggregates results, and returns the final response.
+A central **Coordinator Agent** receives all user requests, decomposes them into sub-tasks, dispatches to specialist agents via the Event Bus, aggregates results, and returns the final response. The Coordinator uses the **Capability Registry** (a read-only projection of the **Agent Registry**) to discover available specialists and their NATS subjects at runtime, rather than hard-coding agent references. Each specialist is described by an **AgentSpec** that declares its capabilities, routing, and input/output schemas. See [considerations/17](17_agent_registry_and_discovery.md).
 
 **Pros:**
 - Clear control flow; easy to reason about and debug.

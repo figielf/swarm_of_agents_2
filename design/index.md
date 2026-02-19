@@ -44,6 +44,7 @@ This folder contains the architecture design for the **event-driven agentic swar
 | 14 | Protocol Wrappers (MCP / A2A) | [14_protocol_wrappers_mcp_a2a.md](considerations/14_protocol_wrappers_mcp_a2a.md) |
 | 15 | Testing, Simulation & Load | [15_testing_simulation_and_load.md](considerations/15_testing_simulation_and_load.md) |
 | 16 | Cost, Latency & SLOs | [16_cost_latency_and_slo.md](considerations/16_cost_latency_and_slo.md) |
+| 17 | Agent Registry, AgentSpec & Discovery | [17_agent_registry_and_discovery.md](considerations/17_agent_registry_and_discovery.md) |
 
 ## Architecture Decision Records
 
@@ -58,6 +59,7 @@ This folder contains the architecture design for the **event-driven agentic swar
 | ADR-0007 | Observability & replay → OpenTelemetry + Trajectory Store | [ADR-0007](adr/ADR-0007-observability-replay.md) |
 | ADR-0008 | Protocol Gateway → Centralized MCP/A2A adapter | [ADR-0008](adr/ADR-0008-protocol-gateway-mcp-a2a.md) |
 | ADR-0009 | Deployment & scaling → K8s per-agent-type Deployments | [ADR-0009](adr/ADR-0009-deployment-scaling-isolation.md) |
+| ADR-0010 | Agent Registry & AgentSpec → NATS KV-backed dynamic discovery | [ADR-0010](adr/ADR-0010-agent-registry-agentspec.md) |
 
 ## Diagrams
 
@@ -79,5 +81,5 @@ This folder contains the architecture design for the **event-driven agentic swar
 3. **Multi-tenancy data isolation**: Whether to use separate PostgreSQL schemas or databases per tenant (currently namespace-level Kubernetes isolation).
 4. **A2A federation trust model**: Mutual TLS certificate management for cross-organization agent communication.
 5. **Prompt regression test corpus**: Initial golden dataset for CI prompt regression runs.
-6. **Agent capability discovery**: Whether to build a dynamic agent registry or rely on static configuration.
+6. ~~**Agent capability discovery**: Whether to build a dynamic agent registry or rely on static configuration.~~ **Resolved:** [ADR-0010](adr/ADR-0010-agent-registry-agentspec.md) — NATS KV-backed Agent Registry with AgentSpec and Capability Registry projection.
 7. **Cost attribution granularity**: Per-request vs per-agent vs per-tenant token cost tracking and chargeback.

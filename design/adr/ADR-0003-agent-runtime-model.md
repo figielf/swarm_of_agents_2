@@ -26,6 +26,9 @@ The runtime is a thin layer that:
 7. Emits lifecycle events to the Trajectory Store.
 8. Exposes HTTP health probes for Kubernetes.
 9. Handles graceful shutdown on SIGTERM.
+10. On startup, registers the agent’s **AgentSpec** with the **Agent Registry** (NATS KV bucket). Sends periodic heartbeats (every 30s). On shutdown, deregisters. See [ADR-0010](ADR-0010-agent-registry-agentspec.md).
+
+Runtime configuration (timeouts, retries, concurrency, evaluators, tools) is read from the agent’s **AgentSpec**. This makes agent behavior declarative and auditable.
 
 ## Options considered
 
@@ -66,4 +69,5 @@ The Agent Runtime is the framework's core execution model. It must integrate tig
 - Implement retry policy (configurable exponential backoff with jitter).
 - Implement reflection loop orchestration.
 - Build idempotency deduplication layer (event_id cache in Redis).
-- Write developer guide: "How to build a new agent."
+- Implement Agent Registry lifecycle: register AgentSpec on startup, heartbeat, deregister on shutdown. See [ADR-0010](ADR-0010-agent-registry-agentspec.md).
+- Write developer guide: "How to build a new agent" (including AgentSpec authoring).

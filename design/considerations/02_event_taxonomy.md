@@ -56,6 +56,7 @@ Events are organized into a **category → action** hierarchy. Each event has a 
 | `prompt` | `prompt.loaded`, `prompt.version_changed` | Prompt Registry events. |
 | `prompt_run` | `prompt_run.started`, `prompt_run.completed`, `prompt_run.failed` | CI/batch prompt runs. |
 | `protocol` | `protocol.mcp.request`, `protocol.mcp.response`, `protocol.a2a.request`, `protocol.a2a.response` | Protocol Gateway events. |
+| `registry` | `registry.agent.registered`, `registry.agent.deregistered`, `registry.agent.heartbeat`, `registry.capability.changed` | Agent Registry lifecycle and Capability Registry change events. See [considerations/17](17_agent_registry_and_discovery.md). |
 | `system` | `system.health`, `system.config_changed`, `system.rate_limited` | Platform-level events. |
 
 **Pros:**

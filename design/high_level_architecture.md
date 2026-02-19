@@ -4,20 +4,20 @@
 
 ## 1. Motivation and problem statement
 
-### 1.1 Why move beyond the previous LangGraph "static workflow graph" approach?
+### 1.1 Why move beyond a LangGraph "static workflow graph" approach?
 
-Our initial e-commerce shopping-assistant system was built on **LangGraph**, a framework that models agent collaboration as a **static directed graph** with conditional edges evaluated at runtime. After shipping to production, we observed the following structural limitations:
+A natural starting point for an e-commerce shopping-assistant system is **LangGraph**, a framework that models agent collaboration as a **static directed graph** with conditional edges evaluated at runtime. On evaluation, we find the following structural limitations:
 
 | Limitation | Description |
 |---|---|
-| **Graph rigidity** | Every new agent interaction requires a code change to the graph definition. Product teams cannot compose new swarm behaviors without modifying shared infrastructure. Adding a specialist agent to a workflow meant touching graphs owned by other teams. |
-| **Conditional edge sprawl** | As the number of agents and branching conditions grew, the graph became a tangled state machine. Debugging which path was taken required tracing through dozens of conditional callables. |
+| **Graph rigidity** | Every new agent interaction requires a code change to the graph definition. Product teams cannot compose new swarm behaviors without modifying shared infrastructure. Adding a specialist agent to a workflow means touching graphs owned by other teams. |
+| **Conditional edge sprawl** | As the number of agents and branching conditions grows, the graph becomes a tangled state machine. Debugging which path is taken requires tracing through dozens of conditional callables. |
 | **Limited dynamism** | LangGraph graphs are defined at import time. True dynamic task decomposition — where an agent decides at runtime which other agents to recruit — requires awkward workarounds (e.g., "super-nodes" that internally spin up sub-graphs). |
 | **Tight coupling** | Agents are callable functions wired directly into the graph. Changing the interface of one agent often cascades through the graph definition and tests. |
 | **No native streaming** | LangGraph's streaming is token-level on a single LLM call. We need structured **chunk begin/end framing** across multi-agent conversations for multimodal time-sync (e.g., aligning text + product-card carousel renders). |
 | **Poor horizontal scaling** | A single graph executor runs in one process. Scaling means replicating the entire graph; there is no way to independently scale hot agents (e.g., the product-search agent during flash-sale traffic). |
-| **Evaluation gaps** | No built-in hooks for per-agent evaluation, reflection loops, or system-level guardrails — evaluation was bolted on externally and was fragile. |
-| **Replay difficulty** | Reconstructing the exact trajectory of a past conversation required manual log stitching; there was no first-class Trajectory Store. |
+| **Evaluation gaps** | No built-in hooks for per-agent evaluation, reflection loops, or system-level guardrails. Evaluation must be performed by a separate Eval agent wired into the graph, which further complicates the static topology and increases conditional edge sprawl. |
+| **Replay difficulty** | Reconstructing the exact trajectory of a past conversation requires manual log stitching; there is no first-class Trajectory Store. |
 
 **Why event-driven?** An event-driven architecture addresses every limitation above:
 - Agents are **loosely coupled** services communicating via an Event Bus.
@@ -40,7 +40,8 @@ Our initial e-commerce shopping-assistant system was built on **LangGraph**, a f
 
 | Component | Responsibility | Deep dive |
 |---|---|---|
-| **Agent Runtime** | Lifecycle management (start, heartbeat, shutdown), concurrency control, retry policies, timeout enforcement, health checks. Python-first implementation using `asyncio`. | [considerations/03](considerations/03_agent_runtime_and_lifecycle.md), [ADR-0003](adr/ADR-0003-agent-runtime-model.md) |
+| **Agent Runtime** | Lifecycle management (start, heartbeat, shutdown), concurrency control, retry policies, timeout enforcement, health checks. Python-first implementation using `asyncio`. On startup, registers the agent's **AgentSpec** with the **Agent Registry**; on shutdown, deregisters. | [considerations/03](considerations/03_agent_runtime_and_lifecycle.md), [ADR-0003](adr/ADR-0003-agent-runtime-model.md) |
+| **Agent Registry & AgentSpec** | Dynamic registry of all agents. Each agent is described by a declarative **AgentSpec** document (capabilities, routing, runtime config, tools, ownership). The **Capability Registry** is a read-only projection mapping Agent Capabilities to NATS subjects for task routing. Backed by NATS JetStream KV. | [considerations/17](considerations/17_agent_registry_and_discovery.md), [ADR-0010](adr/ADR-0010-agent-registry-agentspec.md) |
 | **Event Bus** | Pub/sub backbone for all inter-agent messaging. Supports topic-based routing, consumer groups, ordered delivery per partition, and dead-letter queues. | [considerations/01](considerations/01_communication_patterns.md), [ADR-0001](adr/ADR-0001-messaging-backbone.md) |
 | **Message Contracts** | Canonical envelope schema (JSON), schema registry, versioning (backward-compatible evolution), validation at publish time. | [considerations/04](considerations/04_message_schema_and_contracts.md) |
 | **Shared Memory** | Session memory (Redis), long-term memory (PostgreSQL + pgvector), blackboard/stigmergy store for leaderless collaboration. | [considerations/06](considerations/06_memory_architecture_shared_state.md), [ADR-0004](adr/ADR-0004-memory-state-strategy.md) |
@@ -68,11 +69,15 @@ flowchart LR
     AR --> TS[(Trajectory Store)]
     AR --> SM[(Shared Memory)]
     AR --> PR[Prompt Registry]
+    AR -->|register/heartbeat| REG[(Agent Registry<br/>NATS KV)]
+    REG -->|capability projection| CR[Capability Registry]
+    CR -->|lookup| AR
     EV --> TS
     TG --> TS
     SM --> TS
     AR -->|Streamed chunks| GW
     PG[Protocol Gateway<br/>MCP / A2A] --> EB
+    PG -->|AgentCard from| REG
   end
 
   TG --> EXT[External Systems / APIs]
@@ -93,9 +98,10 @@ This section summarizes the trade-offs. The full analysis is in [considerations/
 
 **How it works (event-driven):**
 1. Coordinator receives user request via the Event Bus.
-2. Coordinator publishes task events to specialist topic(s).
-3. Specialist agents consume tasks, produce results, publish back to the bus.
-4. Coordinator aggregates, evaluates, and responds.
+2. Coordinator queries the **Capability Registry** (a read-only projection of the **Agent Registry**) to resolve each `target_capability` to a NATS subject. The planning LLM receives the capability list from the registry as context.
+3. Coordinator publishes task events to the specialist subject(s) resolved via the Capability Registry.
+4. Specialist agents consume tasks, produce results, publish back to the bus.
+5. Coordinator aggregates, evaluates, and responds.
 
 **Risks:**
 - Coordinator becomes a bottleneck and single point of failure.
@@ -105,7 +111,7 @@ This section summarizes the trade-offs. The full analysis is in [considerations/
 **Mitigations:**
 - Stateless coordinator with Event Bus-backed state recovery.
 - Circuit breakers and fallback paths.
-- Coordinator prompt is generated from a specialist registry (not hand-maintained).
+- Coordinator prompt is dynamically generated from the **Capability Registry** (projection of the **Agent Registry**). When agents register or deregister, the Coordinator watches the registry and regenerates its planning prompt automatically.
 
 See: [diagrams/02_patterns.md — Coordinator pattern](diagrams/02_patterns.md)
 
@@ -243,6 +249,7 @@ See: [considerations/11](considerations/11_security_privacy_compliance.md)
 | **Observability + replay** | OpenTelemetry tracing + append-only Trajectory Store in PostgreSQL with replay engine | [ADR-0007](adr/ADR-0007-observability-replay.md) |
 | **Protocol Gateway** | Thin adapter layer for MCP/A2A; internal agents remain protocol-agnostic | [ADR-0008](adr/ADR-0008-protocol-gateway-mcp-a2a.md) |
 | **Deployment + scaling** | Kubernetes with per-agent-type deployments; HPA on queue depth; namespace isolation per tenant | [ADR-0009](adr/ADR-0009-deployment-scaling-isolation.md) |
+| **Agent Registry & AgentSpec** | NATS KV-backed dynamic registry with AgentSpec declarations and Capability Registry projection | [ADR-0010](adr/ADR-0010-agent-registry-agentspec.md) |
 
 ### 9.2 Incremental roadmap
 

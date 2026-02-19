@@ -90,9 +90,12 @@ User input → PII detector (at ingress)
 **Access control model:**
 
 ```yaml
+# Roles are derived from the AgentSpec.tools and AgentSpec.capabilities fields.
+# The Agent Registry is the source of truth for what each agent is authorized to do.
+# See: considerations/17_agent_registry_and_discovery.md, ADR-0010
 roles:
-  - name: shopping-assistant
-    tools: [product-catalog.search, product-catalog.details, cart.add, cart.view]
+  - name: shopping-assistant   # matches AgentSpec.agent_type
+    tools: [product-catalog.search, product-catalog.details, cart.add, cart.view]  # from AgentSpec.tools
     topics: [task.*, message.*, stream.*]
     memory: [session.read, session.write]
 

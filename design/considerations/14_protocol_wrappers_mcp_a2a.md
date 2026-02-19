@@ -135,6 +135,9 @@ class A2AAdapter(ProtocolAdapter):
 ## 6. Required ADRs
 
 - [ADR-0008: Protocol Gateway for MCP/A2A](../adr/ADR-0008-protocol-gateway-mcp-a2a.md) — this decision.
+- [ADR-0010: Agent Registry and AgentSpec](../adr/ADR-0010-agent-registry-agentspec.md) — AgentSpec is the source for A2A AgentCard generation.
+
+**A2A AgentCard generation:** The Protocol Gateway generates **A2A AgentCard** documents from the **AgentSpec** entries in the **Agent Registry**. Internal agents are automatically discoverable by external A2A consumers without maintaining a separate discovery document. When an AgentSpec is registered or updated, the Protocol Gateway regenerates the corresponding AgentCard. See [considerations/17](17_agent_registry_and_discovery.md).
 
 ## 7. Diagrams
 

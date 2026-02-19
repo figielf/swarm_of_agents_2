@@ -56,6 +56,7 @@ Build a thin Python runtime layer that:
 6. Emits lifecycle events to the Trajectory Store.
 7. Exposes HTTP health endpoints for Kubernetes probes.
 8. Supports graceful shutdown (drain in-flight tasks, then exit).
+9. On startup, registers the agent's **AgentSpec** with the **Agent Registry** (NATS KV); on shutdown, deregisters. Sends periodic heartbeats (every 30s). See [considerations/17](17_agent_registry_and_discovery.md), [ADR-0010](../adr/ADR-0010-agent-registry-agentspec.md).
 
 **Agent lifecycle states:**
 
@@ -116,7 +117,9 @@ Each agent invocation runs as a separate container (e.g., Knative, AWS Lambda).
 | **Retry policy** | Exponential backoff with jitter (base 1s, max 30s, max retries 3). Configurable per agent. |
 | **Timeout** | Per-task timeout (default: 60s). Per-LLM-call timeout (default: 30s). Hard session timeout (default: 300s). |
 | **Health probes** | HTTP `/healthz` (liveness), `/readyz` (readiness — connected to Event Bus and Shared Memory). |
-| **Graceful shutdown** | On SIGTERM: stop consuming new events, drain in-flight tasks (30s grace period), then exit. |
+| **Graceful shutdown** | On SIGTERM: stop consuming new events, drain in-flight tasks (30s grace period), deregister from the **Agent Registry**, then exit. |
+| **Registration** | On startup: register **AgentSpec** with the **Agent Registry** (NATS KV). Runtime reads the AgentSpec from a local config file or environment. See [considerations/17](17_agent_registry_and_discovery.md). |
+| **Heartbeat** | Periodic heartbeat (every 30s) updates `last_heartbeat` and `status` in the Agent Registry. Missed heartbeats trigger auto-deregistration after 90s. |
 | **Reflection loop** | Optional `reflect` phase after `handle()`. Configurable: `max_reflection_rounds` (default: 2), `reflection_criteria`, `reflection_model`. |
 | **Dead-letter queue** | Events that fail after max retries are published to a per-agent DLQ topic for manual investigation. |
 | **Idempotency** | Agents must be idempotent. The runtime provides a deduplication layer based on `event_id` (checked against a short-lived cache in Redis). |
