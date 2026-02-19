@@ -314,6 +314,18 @@ sequenceDiagram
 
 ---
 
+## Gateway Involvement Summary
+
+| Communication Path | Event Bus | Tool Gateway | Protocol Gateway |
+|---|:---:|:---:|:---:|
+| **Agent → Agent** (internal) | ✅ | — | — |
+| **Agent → Internal Tool** | ✅ | ✅ | — |
+| **Agent → External API Tool** (non-MCP) | ✅ | ✅ | — |
+| **Agent → External MCP Tool** | ✅ | ✅ | ✅ |
+| **Agent → External A2A Agent** | ✅ | — | ✅ |
+
+---
+
 ## Part 3 — Streaming Protocol
 
 All communication paths deliver responses using the **Chunk-framed Protocol**:
@@ -335,15 +347,3 @@ sequenceDiagram
 ```
 
 Multimodal responses use the same `message_id` with different `modality` tags (text, image, carousel). The UI aligns rendering by `(message_id, modality, seq_no)`.
-
----
-
-## Gateway Involvement Summary
-
-| Communication Path | Event Bus | Tool Gateway | Protocol Gateway |
-|---|:---:|:---:|:---:|
-| **Agent → Agent** (internal) | ✅ | — | — |
-| **Agent → Internal Tool** | ✅ | ✅ | — |
-| **Agent → External API Tool** (non-MCP) | ✅ | ✅ | — |
-| **Agent → External MCP Tool** | ✅ | ✅ | ✅ |
-| **Agent → External A2A Agent** | ✅ | — | ✅ |

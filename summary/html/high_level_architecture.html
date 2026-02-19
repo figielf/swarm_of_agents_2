@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>High-Level Architecture — Event-Driven Agentic Swarm Framework</title>
+  <style>
+    /* === base === */
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   "Helvetica Neue", Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #172b4d;
+      max-width: 960px;
+      margin: 32px auto;
+      padding: 0 24px;
+    }
+    /* === headings === */
+    h1 { font-size: 2em;   border-bottom: 2px solid #dfe1e6; padding-bottom: 8px;  margin-top: 32px; }
+    h2 { font-size: 1.5em; border-bottom: 1px solid #dfe1e6; padding-bottom: 4px;  margin-top: 28px; }
+    h3 { font-size: 1.17em; margin-top: 24px; }
+    h4 { font-size: 1em;   margin-top: 16px; }
+    /* === tables === */
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 16px 0;
+      font-size: 13px;
+    }
+    th, td {
+      border: 1px solid #dfe1e6;
+      padding: 8px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background-color: #f4f5f7;
+      font-weight: 600;
+    }
+    tr:nth-child(even) td {
+      background-color: #fafbfc;
+    }
+    /* === code === */
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 12px;
+      background: #f4f5f7;
+      padding: 2px 5px;
+      border-radius: 3px;
+    }
+    pre {
+      background: #f4f5f7;
+      border: 1px solid #dfe1e6;
+      border-radius: 4px;
+      padding: 16px;
+      overflow-x: auto;
+      margin: 16px 0;
+    }
+    pre code {
+      background: none;
+      padding: 0;
+      font-size: 12px;
+    }
+    /* === mermaid diagram image === */
+    .mermaid-img {
+      display: block;
+      max-width: 100%;
+      border: 1px solid #dfe1e6;
+      border-radius: 4px;
+      margin: 16px 0;
+      background: #f9f9fb;
+      padding: 8px;
+    }
+    /* === blockquotes / notes === */
+    blockquote {
+      border-left: 4px solid #0052cc;
+      margin: 16px 0;
+      padding: 8px 16px;
+      background: #e9f2ff;
+      border-radius: 0 4px 4px 0;
+    }
+    /* === lists === */
+    ul, ol { margin: 8px 0 8px 24px; }
+    li { margin: 4px 0; }
+    /* === horizontal rule === */
+    hr { border: none; border-top: 1px solid #dfe1e6; margin: 24px 0; }
+    /* === strong / bold === */
+    strong { font-weight: 600; color: #172b4d; }
+    /* === links === */
+    a { color: #0052cc; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+  <!-- No Mermaid JS needed: diagrams are pre-rendered as static images via mermaid.ink -->
+</head>
+<body>
+<h1 id="high-level-architecture-event-driven-agentic-swarm-framework">High-Level Architecture — Event-Driven Agentic Swarm Framework</h1>
+<h2 id="1-problem-statement">1. Problem Statement</h2>
+<p>Traditional static-graph agent frameworks (e.g., LangGraph) impose rigid topologies, tight coupling, conditional-edge sprawl, and limited runtime dynamism. Scaling, streaming, evaluation, and replay all require workarounds. An <strong>event-driven architecture</strong> addresses every limitation:</p>
+<ul>
+<li>Agents are <strong>loosely coupled</strong> services communicating via an Event Bus.</li>
+<li>Workflows are <strong>data-driven</strong> — agents publish/subscribe to task events, enabling dynamic composition.</li>
+<li>Individual agents scale <strong>independently</strong> behind topic partitions.</li>
+<li>Every event is recorded in a <strong>Trajectory Store</strong>, giving replay and audit for free.</li>
+<li>Streaming becomes a <strong>first-class protocol</strong> (chunk begin/end events on the bus).</li>
+</ul>
+<p><strong>Target domain:</strong> Enterprise e-commerce — shopping assistants, return-handling bots, post-purchase support, review-summarization agents.</p>
+<h2 id="2-target-outcomes">2. Target Outcomes</h2>
+<ol>
+<li>Production-grade event-driven multi-agent framework for e-commerce.</li>
+<li>Product teams compose Agent swarms from shared "platform agents" without modifying framework code.</li>
+<li>Supports both Coordinator-driven and leaderless collaboration within the same runtime.</li>
+<li>Built-in Evaluation Layer, Reflection Loops, guardrails, and full Trajectory capture.</li>
+<li>Integrates with external agents and tools via Protocol Gateway (MCP, A2A).</li>
+</ol>
+<h2 id="3-key-components">3. Key Components</h2>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Agent Runtime</strong></td>
+<td>Lifecycle management (start, heartbeat, shutdown), concurrency control, retry policies, timeout enforcement, health checks. Python asyncio. Registers AgentSpec with Agent Registry on startup.</td>
+</tr>
+<tr>
+<td><strong>Agent Registry &amp; AgentSpec</strong></td>
+<td>Dynamic registry of all agents. Each described by a declarative AgentSpec (capabilities, routing, runtime config, tools, ownership). Capability Registry is a read-only projection mapping capabilities to NATS subjects. Backed by NATS JetStream KV.</td>
+</tr>
+<tr>
+<td><strong>Event Bus</strong></td>
+<td>Pub/sub backbone (NATS JetStream) for all inter-agent messaging. Topic-based routing, consumer groups, ordered delivery, dead-letter queues.</td>
+</tr>
+<tr>
+<td><strong>Message Contracts</strong></td>
+<td>Canonical Event Envelope schema (JSON/Pydantic), schema registry, versioning (backward-compatible evolution), validation at publish time.</td>
+</tr>
+<tr>
+<td><strong>Shared Memory</strong></td>
+<td>Tiered: Session Memory (Redis), Long-term Memory (PostgreSQL + pgvector), Blackboard (Redis pub/sub) for leaderless collaboration.</td>
+</tr>
+<tr>
+<td><strong>Tool Gateway</strong></td>
+<td>Unified interface for tool invocations. Enforces authZ, rate limits, audit logging, idempotency keys, and circuit breaking.</td>
+</tr>
+<tr>
+<td><strong>Evaluation Layer</strong></td>
+<td>Per-agent and system-level quality gates at tool-call, agent-output, and system-response boundaries. Supports Reflection Loops (max 2 rounds).</td>
+</tr>
+<tr>
+<td><strong>Trajectory Store</strong></td>
+<td>Append-only event log (PostgreSQL) capturing every message, tool call, evaluation result, and state mutation. Supports replay, audit, and cost attribution.</td>
+</tr>
+<tr>
+<td><strong>Streaming Pipeline</strong></td>
+<td>Chunk-framed protocol with explicit begin/end markers, sequence numbers, and modality tags for multimodal sync.</td>
+</tr>
+<tr>
+<td><strong>Protocol Gateway</strong></td>
+<td>Adapters for MCP and A2A to interoperate with external agent ecosystems. Internal agents remain protocol-agnostic.</td>
+</tr>
+<tr>
+<td><strong>Observability Stack</strong></td>
+<td>OpenTelemetry tracing, structured logging (<code>structlog</code>), Prometheus metrics, Grafana dashboards, cost/token tracking.</td>
+</tr>
+<tr>
+<td><strong>Prompt Registry</strong></td>
+<td>Git-based versioned prompt templates with A/B testing support and CI prompt regression runs.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="4-architecture-diagram">4. Architecture Diagram</h2>
+<img class="mermaid-img" src="https://mermaid.ink/img/Zmxvd2NoYXJ0IExSCiAgVVtVc2VyIC8gQ2hhbm5lbF0gLS0-fEhUVFAgLyBXZWJTb2NrZXR8IENHV1tDaGFubmVsIEdhdGV3YXldCgogIHN1YmdyYXBoIFBsYXRmb3JtWyJBZ2VudGljIFN3YXJtIFBsYXRmb3JtIl0KICAgIENHVyAtLT58UHVibGlzaCByZXF1ZXN0IGV2ZW50fCBFQlsoRXZlbnQgQnVzXG5OQVRTIEpldFN0cmVhbSldCgogICAgRUIgLS0-IENPT1JEW0Nvb3JkaW5hdG9yIEFnZW50XQogICAgQ09PUkQgLS0-fERlbGVnYXRlIHRhc2tzfCBFQgogICAgRUIgLS0-IFNBMVtTcGVjaWFsaXN0IEFnZW50IEFdCiAgICBFQiAtLT4gU0EyW1NwZWNpYWxpc3QgQWdlbnQgQl0KICAgIEVCIC0tPiBTQU5bU3BlY2lhbGlzdCBBZ2VudCBOXQoKICAgIHN1YmdyYXBoIFJ1bnRpbWVbIkFnZW50IFJ1bnRpbWUg4oCUIFB5dGhvbiBhc3luY2lvIl0KICAgICAgQ09PUkQKICAgICAgU0ExCiAgICAgIFNBMgogICAgICBTQU4KICAgIGVuZAoKICAgIFJ1bnRpbWUgLS0-fHRvb2wuY2FsbCBldmVudHN8IFRHW1Rvb2wgR2F0ZXdheV0KICAgIFJ1bnRpbWUgLS0-fGV2YWwucmVxdWVzdHwgRVZbRXZhbHVhdGlvbiBMYXllcl0KICAgIFJ1bnRpbWUgLS0-fHJlYWQvd3JpdGV8IFNNWyhTZXNzaW9uIE1lbW9yeVxuUmVkaXMpXQogICAgUnVudGltZSAtLT58cmVhZC93cml0ZXwgTFRNWyhMb25nLXRlcm0gTWVtb3J5XG5QRyArIHBndmVjdG9yKV0KICAgIFJ1bnRpbWUgLS0-fHJlYWQvd3JpdGV8IEJCWyhCbGFja2JvYXJkXG5SZWRpcyBwdWIvc3ViKV0KICAgIFJ1bnRpbWUgLS0-fGFwcGVuZHwgVFNbKFRyYWplY3RvcnkgU3RvcmVcblBvc3RncmVTUUwpXQogICAgRVYgLS0-fGV2YWwucmVzdWx0fCBUUwogICAgVEcgLS0-fHRvb2wucmVzdWx0fCBFQgoKICAgIFBSW1Byb21wdCBSZWdpc3RyeVxuZ2l0LWJhc2VkXSAtLT58bG9hZCBwcm9tcHR8IFJ1bnRpbWUKCiAgICBSdW50aW1lIC0tPnxyZWdpc3RlciBBZ2VudFNwZWN8IFJFR1soQWdlbnQgUmVnaXN0cnlcbk5BVFMgS1YpXQogICAgUkVHIC0tPnxjYXBhYmlsaXR5IHByb2plY3Rpb258IENSW0NhcGFiaWxpdHkgUmVnaXN0cnldCiAgICBDUiAtLT58bG9va3VwIGNhcGFiaWxpdHkg4oaSIHN1YmplY3R8IENPT1JECgogICAgUEdXW1Byb3RvY29sIEdhdGV3YXlcbk1DUCAvIEEyQV0gLS0-fHRyYW5zbGF0ZSDihpQgbmF0aXZlIGV2ZW50c3wgRUIKICAgIFBHVyAtLT58QWdlbnRDYXJkIGZyb218IFJFRwogIGVuZAoKICBURyAtLT4gRVhUW0V4dGVybmFsIFN5c3RlbXMgLyBBUElzXQogIFBHVyAtLT4gRVhUQUdbRXh0ZXJuYWwgQWdlbnRzIC8gTUNQIENsaWVudHNdCiAgQ0dXIC0tPnxTU0Ugc3RyZWFtfCBV?theme=neutral" alt="Mermaid diagram" />
+<h2 id="5-end-to-end-request-flow">5. End-to-End Request Flow</h2>
+<img class="mermaid-img" src="https://mermaid.ink/img/c2VxdWVuY2VEaWFncmFtCiAgYXV0b251bWJlcgogIHBhcnRpY2lwYW50IFVzZXIKICBwYXJ0aWNpcGFudCBDR1cgYXMgQ2hhbm5lbCBHYXRld2F5CiAgcGFydGljaXBhbnQgQnVzIGFzIEV2ZW50IEJ1cwogIHBhcnRpY2lwYW50IENvb3JkIGFzIENvb3JkaW5hdG9yIEFnZW50CiAgcGFydGljaXBhbnQgU0EgYXMgU3BlY2lhbGlzdCBBZ2VudAogIHBhcnRpY2lwYW50IFRHIGFzIFRvb2wgR2F0ZXdheQogIHBhcnRpY2lwYW50IEV2YWwgYXMgRXZhbHVhdGlvbiBMYXllcgogIHBhcnRpY2lwYW50IE1lbSBhcyBNZW1vcnkgKFJlZGlzIC8gUEcpCiAgcGFydGljaXBhbnQgVFMgYXMgVHJhamVjdG9yeSBTdG9yZQoKICBVc2VyLT4-Q0dXOiBIVFRQIHJlcXVlc3QKICBDR1ctPj5CdXM6IFB1Ymxpc2ggdGFzay5yZXF1ZXN0ZWQKICBCdXMtLT4-Q29vcmQ6IHRhc2sucmVxdWVzdGVkCgogIENvb3JkLT4-TWVtOiBMb2FkIHNlc3Npb24gY29udGV4dAogIENvb3JkLT4-VFM6IEFwcGVuZCB0cmFqZWN0b3J5IGV2ZW50CgogIENvb3JkLT4-QnVzOiBQdWJsaXNoIHRhc2suZGVsZWdhdGVkIOKGkiBTcGVjaWFsaXN0CiAgQnVzLS0-PlNBOiB0YXNrLmRlbGVnYXRlZAoKICBTQS0-PkJ1czogUHVibGlzaCB0b29sLmNhbGwucmVxdWVzdGVkCiAgQnVzLS0-PlRHOiB0b29sLmNhbGwucmVxdWVzdGVkCiAgVEctPj5CdXM6IFB1Ymxpc2ggdG9vbC5jYWxsLmNvbXBsZXRlZAogIEJ1cy0tPj5TQTogdG9vbC5jYWxsLmNvbXBsZXRlZAoKICBTQS0-Pk1lbTogV3JpdGUgaW50ZXJtZWRpYXRlIHJlc3VsdAogIFNBLT4-QnVzOiBQdWJsaXNoIHRhc2suY29tcGxldGVkIChyZXN1bHQpCiAgQnVzLS0-PkNvb3JkOiB0YXNrLmNvbXBsZXRlZAoKICBDb29yZC0-PkV2YWw6IEV2YWx1YXRlIHN5bnRoZXNpemVkIHJlc3BvbnNlCiAgRXZhbC0tPj5Db29yZDogZXZhbC5yZXN1bHQgKHBhc3MvZmFpbCkKICBFdmFsLT4-VFM6IEFwcGVuZCBldmFsIGV2ZW50CgogIGFsdCBFdmFsIFBBU1MKICAgIENvb3JkLT4-QnVzOiBzdHJlYW0uYmVnaW4KICAgIGxvb3AgTiBjaHVua3MKICAgICAgQ29vcmQtPj5CdXM6IHN0cmVhbS5jaHVuayAoc2VxX25vLCBwYXlsb2FkKQogICAgICBCdXMtLT4-Q0dXOiBzdHJlYW0uY2h1bmsKICAgICAgQ0dXLS0-PlVzZXI6IFNTRSBjaHVuawogICAgZW5kCiAgICBDb29yZC0-PkJ1czogc3RyZWFtLmVuZAogIGVsc2UgRXZhbCBGQUlMIOKGkiByZWZsZWN0aW9uCiAgICBDb29yZC0-PkNvb3JkOiBSZXZpc2Ugb3V0cHV0IChtYXggMiByb3VuZHMpCiAgICBDb29yZC0-PkV2YWw6IFJlLWV2YWx1YXRlCiAgZW5kCgogIENvb3JkLT4-VFM6IEFwcGVuZCBmaW5hbCB0cmFqZWN0b3J5IGV2ZW50?theme=neutral" alt="Mermaid diagram" />
+<h2 id="6-task-routing-how-the-coordinator-finds-specialists">6. Task Routing — How the Coordinator Finds Specialists</h2>
+<p>The Coordinator does <strong>not</strong> hard-code specialist references. It uses a two-step process:</p>
+<ol>
+<li><strong>Capability Registry lookup</strong> — maps declared capability names to NATS subjects.</li>
+<li><strong>LLM-driven task planning</strong> — the planning LLM receives user intent + capability list and decomposes into sub-tasks tagged with <code>target_capability</code>.</li>
+</ol>
+<pre class="highlight"><code class="language-text">User: "Find me a red winter jacket under $200 and check if order #1234 has shipped"
+
+Coordinator LLM plans:
+  Sub-task 1 → target_capability: product.search  → publish to: tasks.product
+  Sub-task 2 → target_capability: order.status     → publish to: tasks.order</code></pre>
+<p>Specialist agents subscribe via NATS JetStream <strong>queue groups</strong> (competing consumers) — exactly one replica picks up each message. This enables automatic load balancing and independent scaling per agent type.</p>
+<h2 id="7-communication-pattern-hybrid-model">7. Communication Pattern: Hybrid Model</h2>
+<p><strong>Default:</strong> Coordinator-first for predictable workflows (search → filter → recommend → checkout).</p>
+<p><strong>Swarm delegation:</strong> For complex sub-problems requiring multi-perspective synthesis (product comparisons, dispute resolution), the Coordinator delegates to a leaderless swarm with a Budget Envelope (max tokens, max turns, timeout).</p>
+<h2 id="8-streaming-protocol">8. Streaming Protocol</h2>
+<p>All agent responses use a <strong>Chunk-framed Protocol</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>stream.begin</code></td>
+<td>Opens a stream — <code>message_id</code>, <code>trace_id</code>, <code>modality</code> (text, image, carousel), <code>expected_chunks</code></td>
+</tr>
+<tr>
+<td><code>stream.chunk</code></td>
+<td>Carries payload — <code>seq_no</code> (1-based), <code>payload</code>, <code>is_partial</code> flag</td>
+</tr>
+<tr>
+<td><code>stream.end</code></td>
+<td>Closes the stream — <code>message_id</code>, <code>checksum</code>, <code>final</code> flag, <code>total_chunks</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Design invariant:</strong> A single non-streamed message is always <code>Begin(N=1) → Chunk(seq_no=1) → End</code>. Consumers never need to distinguish streamed from non-streamed.</p>
+<h2 id="9-evaluation-guardrails">9. Evaluation &amp; Guardrails</h2>
+<p>Built-in evaluation hooks run at three boundaries:</p>
+<table>
+<thead>
+<tr>
+<th>Boundary</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Tool-call</strong></td>
+<td>"Is this SQL query safe to execute?"</td>
+</tr>
+<tr>
+<td><strong>Agent output</strong></td>
+<td>"Does this product description contain hallucinated specs?"</td>
+</tr>
+<tr>
+<td><strong>System response</strong></td>
+<td>"Does the final recommendation violate content policies?"</td>
+</tr>
+</tbody>
+</table>
+<p>Agents can be configured with a Reflection Loop — re-evaluate draft output before publishing (max 2 rounds, configurable criteria and model).</p>
+<h2 id="10-observability-replay">10. Observability &amp; Replay</h2>
+<p>Every event is durably stored in the Trajectory Store with <code>trace_id</code>, <code>span_id</code>, <code>parent_span_id</code>, timestamps, <code>event_type</code>, <code>payload</code>, <code>agent_id</code>, <code>session_id</code>.</p>
+<p><strong>Replay modes:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Cost-free</strong></td>
+<td>Read-only viewer — no execution. For audit.</td>
+</tr>
+<tr>
+<td><strong>Deterministic</strong></td>
+<td>Replay feeds cached tool responses. For regression testing.</td>
+</tr>
+<tr>
+<td><strong>Best-effort</strong></td>
+<td>Re-invokes LLM (results differ). For debugging.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="11-security-compliance">11. Security &amp; Compliance</h2>
+<ul>
+<li><strong>AuthZ per tool call</strong> — role-based permissions at Tool Gateway.</li>
+<li><strong>PII handling</strong> — detection at ingress, redaction before long-term storage.</li>
+<li><strong>Audit trail</strong> — immutable Trajectory Store.</li>
+<li><strong>Rate limiting</strong> — per-agent and per-session token budgets at Event Bus and LLM gateway.</li>
+<li><strong>Content safety</strong> — mandatory guardrail evaluators before any user-facing response.</li>
+</ul>
+<h2 id="12-incremental-roadmap">12. Incremental Roadmap</h2>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Scope</th>
+<th>Duration</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Phase 1 — PoC</strong></td>
+<td>Single Coordinator + 2 Specialist Agents on NATS JetStream. Basic streaming. Manual evaluation. In-memory session state.</td>
+<td>4–6 weeks</td>
+</tr>
+<tr>
+<td><strong>Phase 2 — Pilot</strong></td>
+<td>Add leaderless swarm mode. Trajectory Store in PostgreSQL. OpenTelemetry. Prompt Registry. First product team onboarded.</td>
+<td>6–8 weeks</td>
+</tr>
+<tr>
+<td><strong>Phase 3 — Hardening</strong></td>
+<td>Evaluation Layer with guardrails. Protocol Gateway (MCP). Multi-tenant isolation. CI prompt regression. Load testing.</td>
+<td>8–12 weeks</td>
+</tr>
+<tr>
+<td><strong>Phase 4 — Scale-out</strong></td>
+<td>A2A gateway. Market-based routing. Advanced Reflection Loops. Cost attribution dashboards. Chaos testing.</td>
+<td>Ongoing</td>
+</tr>
+</tbody>
+</table>
+<h2 id="13-key-decisions-summary">13. Key Decisions Summary</h2>
+<table>
+<thead>
+<tr>
+<th>Decision Area</th>
+<th>Recommendation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Messaging backbone</strong></td>
+<td>NATS JetStream — lightweight, high-throughput, persistent streams, built-in consumer groups</td>
+</tr>
+<tr>
+<td><strong>Communication pattern</strong></td>
+<td>Hybrid: Coordinator-first with swarm delegation for complex sub-problems</td>
+</tr>
+<tr>
+<td><strong>Agent Runtime</strong></td>
+<td>Python asyncio-based, with structured concurrency, health probes, graceful shutdown</td>
+</tr>
+<tr>
+<td><strong>Memory / state</strong></td>
+<td>Tiered: Redis (session) + PostgreSQL/pgvector (long-term) + Blackboard over Redis pub/sub</td>
+</tr>
+<tr>
+<td><strong>Streaming protocol</strong></td>
+<td>Chunk-framed, begin/end markers, sequence numbers, modality tags</td>
+</tr>
+<tr>
+<td><strong>Evaluation / guardrails</strong></td>
+<td>Built-in hooks at three boundaries with configurable Reflection Loops</td>
+</tr>
+<tr>
+<td><strong>Observability + replay</strong></td>
+<td>OpenTelemetry tracing + append-only Trajectory Store in PostgreSQL</td>
+</tr>
+<tr>
+<td><strong>Protocol Gateway</strong></td>
+<td>Thin adapter layer for MCP/A2A; internal agents remain protocol-agnostic</td>
+</tr>
+<tr>
+<td><strong>Deployment + scaling</strong></td>
+<td>Kubernetes per-agent-type Deployments; HPA on queue depth; namespace isolation</td>
+</tr>
+<tr>
+<td><strong>Agent Registry</strong></td>
+<td>NATS KV-backed dynamic registry with AgentSpec and Capability Registry projection</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="reading-list">Reading List</h2>
+<p><strong>Event-driven multi-agent patterns:</strong><br />
+- Confluent: <em>Four Design Patterns for Event-Driven, Multi-Agent Systems</em> — https://www.confluent.io/blog/event-driven-multi-agent-systems/<br />
+- Confluent: <em>How to Build a Multi-Agent Orchestrator Using Flink and Kafka</em> — https://www.confluent.io/blog/multi-agent-orchestrator-using-flink-and-kafka/</p>
+<p><strong>Agentic AI design patterns (industry guidance):</strong><br />
+- Google Cloud: <em>Choose a design pattern for your agentic AI system</em> — https://docs.google.com/architecture/choose-design-pattern-agentic-ai-system<br />
+- Google Cloud: <em>Choose your agentic AI architecture components</em> — https://docs.google.com/architecture/choose-agentic-ai-architecture-components</p>
+<p><strong>Leaderless / decentralized coordination (research):</strong><br />
+- De Nicola et al., <em>Multi-agent systems with virtual stigmergy</em> (2020) — https://www.sciencedirect.com/science/article/pii/S016764231930139X<br />
+- Gutiérrez et al., <em>Recent Advances in Swarm Robotics Coordination</em> (2022) — https://www.mdpi.com/2076-3417/12/21/11116</p>
+</body>
+</html>

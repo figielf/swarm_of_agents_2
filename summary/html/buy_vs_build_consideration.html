@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Buy vs Build — Stack Selection Summary</title>
+  <style>
+    /* === base === */
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   "Helvetica Neue", Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #172b4d;
+      max-width: 960px;
+      margin: 32px auto;
+      padding: 0 24px;
+    }
+    /* === headings === */
+    h1 { font-size: 2em;   border-bottom: 2px solid #dfe1e6; padding-bottom: 8px;  margin-top: 32px; }
+    h2 { font-size: 1.5em; border-bottom: 1px solid #dfe1e6; padding-bottom: 4px;  margin-top: 28px; }
+    h3 { font-size: 1.17em; margin-top: 24px; }
+    h4 { font-size: 1em;   margin-top: 16px; }
+    /* === tables === */
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 16px 0;
+      font-size: 13px;
+    }
+    th, td {
+      border: 1px solid #dfe1e6;
+      padding: 8px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background-color: #f4f5f7;
+      font-weight: 600;
+    }
+    tr:nth-child(even) td {
+      background-color: #fafbfc;
+    }
+    /* === code === */
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 12px;
+      background: #f4f5f7;
+      padding: 2px 5px;
+      border-radius: 3px;
+    }
+    pre {
+      background: #f4f5f7;
+      border: 1px solid #dfe1e6;
+      border-radius: 4px;
+      padding: 16px;
+      overflow-x: auto;
+      margin: 16px 0;
+    }
+    pre code {
+      background: none;
+      padding: 0;
+      font-size: 12px;
+    }
+    /* === mermaid diagram image === */
+    .mermaid-img {
+      display: block;
+      max-width: 100%;
+      border: 1px solid #dfe1e6;
+      border-radius: 4px;
+      margin: 16px 0;
+      background: #f9f9fb;
+      padding: 8px;
+    }
+    /* === blockquotes / notes === */
+    blockquote {
+      border-left: 4px solid #0052cc;
+      margin: 16px 0;
+      padding: 8px 16px;
+      background: #e9f2ff;
+      border-radius: 0 4px 4px 0;
+    }
+    /* === lists === */
+    ul, ol { margin: 8px 0 8px 24px; }
+    li { margin: 4px 0; }
+    /* === horizontal rule === */
+    hr { border: none; border-top: 1px solid #dfe1e6; margin: 24px 0; }
+    /* === strong / bold === */
+    strong { font-weight: 600; color: #172b4d; }
+    /* === links === */
+    a { color: #0052cc; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+  <!-- No Mermaid JS needed: diagrams are pre-rendered as static images via mermaid.ink -->
+</head>
+<body>
+<h1 id="buy-vs-build-stack-selection-summary">Buy vs Build — Stack Selection Summary</h1>
+<h2 id="decision-drivers">Decision Drivers</h2>
+<table>
+<thead>
+<tr>
+<th>Driver</th>
+<th>Weight</th>
+<th>Applies to</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Operational simplicity</td>
+<td>High</td>
+<td>All components</td>
+</tr>
+<tr>
+<td>Python ecosystem quality</td>
+<td>High</td>
+<td>Event Bus, Agent Runtime</td>
+</tr>
+<tr>
+<td>Differentiation value</td>
+<td>High</td>
+<td>Agent Runtime, Evaluation Layer (build where we differentiate)</td>
+</tr>
+<tr>
+<td>Enterprise maturity</td>
+<td>High</td>
+<td>Event Bus, stores</td>
+</tr>
+<tr>
+<td>Team size (4–8 engineers)</td>
+<td>High</td>
+<td>Favor buy for undifferentiated heavy lifting</td>
+</tr>
+</tbody>
+</table>
+<h2 id="component-decisions">Component Decisions</h2>
+<h3 id="event-bus-buy-nats-jetstream">Event Bus — BUY → NATS JetStream</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>NATS JetStream</strong> ✅</td>
+<td>Lightweight, fast, persistent streams, consumer groups, subject-based routing, excellent Python client (<code>nats-py</code>). Single binary. Low ops burden.</td>
+<td>Smaller community than Kafka. No built-in schema registry.</td>
+</tr>
+<tr>
+<td>Apache Kafka</td>
+<td>Industry standard, huge ecosystem (Schema Registry, ksqlDB, Flink). Battle-tested at extreme scale.</td>
+<td>Operationally heavy (ZooKeeper/KRaft). Overkill for &lt;10K events/sec. Python client requires C dependency.</td>
+</tr>
+<tr>
+<td>Redis Streams</td>
+<td>Already in stack. Simple API.</td>
+<td>Limited durability. Basic consumer groups. Not designed as primary messaging backbone.</td>
+</tr>
+<tr>
+<td>RabbitMQ</td>
+<td>Mature, good Python support.</td>
+<td>Queue-based (not log-based); harder to replay. No persistent streams.</td>
+</tr>
+<tr>
+<td>Build custom</td>
+<td>Full control.</td>
+<td>Enormous effort. Not viable.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="agent-runtime-build-python-asyncio">Agent Runtime — BUILD → Python asyncio</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Build lightweight runtime</strong> ✅</td>
+<td>Full alignment with event-driven architecture. Thin layer for agent lifecycle, retries, timeouts.</td>
+<td>~2–3 weeks build + ~0.5 FTE ongoing.</td>
+</tr>
+<tr>
+<td>LangGraph</td>
+<td>Existing familiarity. Rich graph patterns.</td>
+<td>Static graph limitations motivate this entire design.</td>
+</tr>
+<tr>
+<td>AutoGen / CrewAI</td>
+<td>Pre-built multi-agent patterns.</td>
+<td>Impose foreign execution models. Don't integrate with Event Bus.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Rationale:</strong> The Agent Runtime is the framework's core differentiator. It must align with the Event Bus and support specific lifecycle, retry, and streaming requirements.</p>
+<h3 id="session-memory-buy-redis">Session Memory — BUY → Redis</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Redis</strong> ✅</td>
+<td>Sub-ms latency. Pub/sub for Blackboard notifications. Widely available as managed service.</td>
+<td>Volatile unless persistence configured.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="long-term-memory-buy-postgresql-pgvector">Long-term Memory — BUY → PostgreSQL + pgvector</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>PostgreSQL + pgvector</strong> ✅</td>
+<td>Durable, SQL-queryable, vector search. Single DB for long-term memory and Trajectory Store.</td>
+<td>Vector search adequate but not SOTA at extreme scale.</td>
+</tr>
+<tr>
+<td>Dedicated vector DB (Qdrant, Weaviate)</td>
+<td>Superior vector search at scale.</td>
+<td>Third technology to operate. Overkill for Phase 1–2.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Phased approach:</strong> PostgreSQL + pgvector for Phase 1–2. Re-evaluate dedicated vector DB at Phase 3 if retrieval latency demands it.</p>
+<h3 id="observability-buy-opentelemetry-stack">Observability — BUY → OpenTelemetry stack</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>OTel + Jaeger/Tempo + Prometheus + Grafana</strong> ✅</td>
+<td>Industry standard. Vendor-neutral. Self-hosted or managed.</td>
+<td>Must integrate and operate multiple components.</td>
+</tr>
+<tr>
+<td>Managed platform (Datadog, New Relic)</td>
+<td>Pre-built dashboards. Fully managed.</td>
+<td>Cost scales with volume. Cannot serve as Trajectory Store. Data leaves network.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="evaluation-layer-build-python-framework">Evaluation Layer — BUILD → Python framework</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Build in-house</strong> ✅</td>
+<td>Full control. Domain-specific evaluators. No data exposure.</td>
+<td>Must build and maintain evaluators.</td>
+</tr>
+<tr>
+<td>External platform (Patronus, Galileo)</td>
+<td>Pre-built evaluators. Dashboards.</td>
+<td>Data privacy concerns. Cost. Latency.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Phased approach:</strong> Build core evaluators in Phase 1–2. Consider hybrid with external platforms at Phase 3+ for specialized safety evaluators.</p>
+<h3 id="protocol-gateway-build-thin-adapters-buy-sdks">Protocol Gateway — BUILD (thin adapters) + BUY (SDKs)</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Build thin adapters over MCP/A2A SDKs</strong> ✅</td>
+<td>Protocols evolving; thin adapters easy to update. Full control over translation.</td>
+<td>Must track protocol spec changes.</td>
+</tr>
+<tr>
+<td>Adopt MCP SDK as framework</td>
+<td>Pre-built protocol handling.</td>
+<td>Still requires adaptation to Event Bus envelope.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="trajectory-store-build-schema-buy-postgresql">Trajectory Store — BUILD (schema) + BUY (PostgreSQL)</h3>
+<p>Append-only log in PostgreSQL. Schema is custom; storage engine is off-the-shelf.</p>
+<h3 id="prompt-registry-build-git-based-service">Prompt Registry — BUILD → Git-based service</h3>
+<p>Git-versioned prompt templates with a lightweight HTTP service. External platforms (Humanloop, LangFuse) rejected for data privacy and integration reasons.</p>
+<h2 id="decision-summary">Decision Summary</h2>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Decision</th>
+<th>Technology</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Event Bus</td>
+<td><strong>Buy</strong></td>
+<td>NATS JetStream</td>
+<td>Best simplicity / performance / persistence balance</td>
+</tr>
+<tr>
+<td>Agent Runtime</td>
+<td><strong>Build</strong></td>
+<td>Python asyncio</td>
+<td>Core differentiator; must align with Event Bus</td>
+</tr>
+<tr>
+<td>Session Memory</td>
+<td><strong>Buy</strong></td>
+<td>Redis</td>
+<td>Fast, mature, already needed for Blackboard</td>
+</tr>
+<tr>
+<td>Long-term Memory</td>
+<td><strong>Buy</strong></td>
+<td>PostgreSQL + pgvector</td>
+<td>Durable, queryable, vector search</td>
+</tr>
+<tr>
+<td>Trajectory Store</td>
+<td><strong>Build</strong> (schema) / <strong>Buy</strong> (PG)</td>
+<td>PostgreSQL table</td>
+<td>Append-only log; SQL for replay queries</td>
+</tr>
+<tr>
+<td>Observability</td>
+<td><strong>Buy</strong></td>
+<td>OTel + Prometheus + Grafana</td>
+<td>Industry standard; self-hosted</td>
+</tr>
+<tr>
+<td>Evaluation Layer</td>
+<td><strong>Build</strong></td>
+<td>Python framework</td>
+<td>Domain-specific; data privacy</td>
+</tr>
+<tr>
+<td>Protocol Gateway</td>
+<td><strong>Build</strong> + <strong>Buy</strong> (SDKs)</td>
+<td>Thin adapters over MCP/A2A SDKs</td>
+<td>Protocols evolving; thin is best</td>
+</tr>
+<tr>
+<td>Prompt Registry</td>
+<td><strong>Build</strong></td>
+<td>Git-based service</td>
+<td>IP stays in-house; CI-testable</td>
+</tr>
+</tbody>
+</table>
+</body>
+</html>

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Glossary</title>
+  <style>
+    /* === base === */
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   "Helvetica Neue", Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #172b4d;
+      max-width: 960px;
+      margin: 32px auto;
+      padding: 0 24px;
+    }
+    /* === headings === */
+    h1 { font-size: 2em;   border-bottom: 2px solid #dfe1e6; padding-bottom: 8px;  margin-top: 32px; }
+    h2 { font-size: 1.5em; border-bottom: 1px solid #dfe1e6; padding-bottom: 4px;  margin-top: 28px; }
+    h3 { font-size: 1.17em; margin-top: 24px; }
+    h4 { font-size: 1em;   margin-top: 16px; }
+    /* === tables === */
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 16px 0;
+      font-size: 13px;
+    }
+    th, td {
+      border: 1px solid #dfe1e6;
+      padding: 8px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background-color: #f4f5f7;
+      font-weight: 600;
+    }
+    tr:nth-child(even) td {
+      background-color: #fafbfc;
+    }
+    /* === code === */
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 12px;
+      background: #f4f5f7;
+      padding: 2px 5px;
+      border-radius: 3px;
+    }
+    pre {
+      background: #f4f5f7;
+      border: 1px solid #dfe1e6;
+      border-radius: 4px;
+      padding: 16px;
+      overflow-x: auto;
+      margin: 16px 0;
+    }
+    pre code {
+      background: none;
+      padding: 0;
+      font-size: 12px;
+    }
+    /* === mermaid diagram image === */
+    .mermaid-img {
+      display: block;
+      max-width: 100%;
+      border: 1px solid #dfe1e6;
+      border-radius: 4px;
+      margin: 16px 0;
+      background: #f9f9fb;
+      padding: 8px;
+    }
+    /* === blockquotes / notes === */
+    blockquote {
+      border-left: 4px solid #0052cc;
+      margin: 16px 0;
+      padding: 8px 16px;
+      background: #e9f2ff;
+      border-radius: 0 4px 4px 0;
+    }
+    /* === lists === */
+    ul, ol { margin: 8px 0 8px 24px; }
+    li { margin: 4px 0; }
+    /* === horizontal rule === */
+    hr { border: none; border-top: 1px solid #dfe1e6; margin: 24px 0; }
+    /* === strong / bold === */
+    strong { font-weight: 600; color: #172b4d; }
+    /* === links === */
+    a { color: #0052cc; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+  <!-- No Mermaid JS needed: diagrams are pre-rendered as static images via mermaid.ink -->
+</head>
+<body>
+<h1 id="glossary">Glossary</h1>
+<p>Canonical vocabulary used across this architecture summary.</p>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Definition</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Agent</strong></td>
+<td>An autonomous unit of work that consumes events, reasons (typically via an LLM), and produces events. Fully described by an AgentSpec document.</td>
+</tr>
+<tr>
+<td><strong>Agent Capability</strong></td>
+<td>A discrete ability an agent declares it can perform (e.g., <code>product.search</code>, <code>order.cancel</code>). Defined with name, description, and input/output schemas. Capabilities are listed in the agent's AgentSpec and used by the Coordinator for task routing via the Capability Registry.</td>
+</tr>
+<tr>
+<td><strong>Agent Registry</strong></td>
+<td>The authoritative store of all AgentSpec documents. Backed by a NATS JetStream key-value bucket. Each agent registers its spec at startup and deregisters on shutdown. Supports heartbeat-based liveness detection (auto-deregister after 90 s of missed heartbeats).</td>
+</tr>
+<tr>
+<td><strong>Agent Runtime</strong></td>
+<td>The lightweight Python asyncio execution environment and lifecycle manager for agents. Handles event consumption, retries (exponential backoff with jitter), timeouts, health probes, reflection loops, graceful shutdown, and Agent Registry lifecycle (register/heartbeat/deregister).</td>
+</tr>
+<tr>
+<td><strong>AgentSpec</strong></td>
+<td>A declarative Pydantic model that fully describes an agent: type, version, capabilities, NATS subject, consumer group, supported patterns, runtime config, evaluators, tools, owner team, tenant scope, and lifecycle metadata. Stored in the Agent Registry.</td>
+</tr>
+<tr>
+<td><strong>Blackboard</strong></td>
+<td>A shared-memory collaboration pattern where agents read and write intermediate results to a common store (Redis pub/sub + hash maps). Agents are notified of updates via pub/sub.</td>
+</tr>
+<tr>
+<td><strong>Budget Envelope</strong></td>
+<td>A constraint object (<code>max_tokens</code>, <code>max_turns</code>, <code>timeout_ms</code>) attached to task delegations to prevent runaway costs and latency.</td>
+</tr>
+<tr>
+<td><strong>Capability Registry</strong></td>
+<td>A read-only projection of the Agent Registry that maps Agent Capabilities to NATS subjects. Rebuilt on every AgentSpec change. Used by the Coordinator Agent to dynamically route tasks to the correct specialist without hard-coding.</td>
+</tr>
+<tr>
+<td><strong>Channel Gateway</strong></td>
+<td>The edge service that accepts user requests (HTTP/WebSocket), translates them into platform events, and streams chunk-framed responses back as SSE.</td>
+</tr>
+<tr>
+<td><strong>Chunk-framed Protocol</strong></td>
+<td>The streaming contract where all agent responses are represented as <code>stream.begin</code> → <code>stream.chunk[1..N]</code> → <code>stream.end</code>. A "single message" is N=1.</td>
+</tr>
+<tr>
+<td><strong>Coordinator Agent</strong></td>
+<td>A special agent that receives user tasks, plans execution, delegates sub-tasks to specialist agents, synthesizes results, and manages the evaluation/reflection cycle.</td>
+</tr>
+<tr>
+<td><strong>Evaluation Layer</strong></td>
+<td>Built-in quality gates (rule-based, LLM-as-judge, classifier) that assess agent outputs at tool-call, agent-output, and system-response boundaries.</td>
+</tr>
+<tr>
+<td><strong>Event Bus</strong></td>
+<td>The NATS JetStream pub/sub messaging backbone used for all inter-agent communication.</td>
+</tr>
+<tr>
+<td><strong>Event Envelope</strong></td>
+<td>The canonical JSON message wrapper containing <code>event_type</code>, <code>source</code>, <code>target</code>, <code>correlation_id</code>, <code>trace_id</code>, <code>payload</code>, and <code>metadata</code>.</td>
+</tr>
+<tr>
+<td><strong>Long-term Memory</strong></td>
+<td>PostgreSQL + pgvector store for persistent knowledge, semantic search (RAG), and conversation history beyond session TTL.</td>
+</tr>
+<tr>
+<td><strong>Prompt Registry</strong></td>
+<td>A git-based versioned store of prompt templates loaded by agents at startup. Versions are CI-tested via regression runs.</td>
+</tr>
+<tr>
+<td><strong>Protocol Gateway</strong></td>
+<td>A centralized service that translates MCP and A2A protocol messages at the platform boundary. Internal agents remain protocol-agnostic.</td>
+</tr>
+<tr>
+<td><strong>Reflection Loop</strong></td>
+<td>An optional post-processing phase where an agent evaluates its own output and revises it (bounded by <code>max_reflection_rounds</code>, default 2).</td>
+</tr>
+<tr>
+<td><strong>Session Memory</strong></td>
+<td>Redis-backed short-lived memory (TTL-bounded) for in-flight conversation context and working state.</td>
+</tr>
+<tr>
+<td><strong>Shared Memory</strong></td>
+<td>Logical umbrella term for all memory tiers: Session Memory (Redis), Long-term Memory (PostgreSQL + pgvector), and Blackboard (Redis pub/sub).</td>
+</tr>
+<tr>
+<td><strong>Specialist Agent</strong></td>
+<td>A domain-focused agent (e.g., ProductAgent, OrderAgent) that handles a specific capability and is delegated tasks by the Coordinator.</td>
+</tr>
+<tr>
+<td><strong>Stigmergy</strong></td>
+<td>Indirect coordination through the shared environment (Blackboard). Agents leave signals for others without direct messaging.</td>
+</tr>
+<tr>
+<td><strong>Tool Gateway</strong></td>
+<td>A centralized service providing standardized access to external tools/APIs with authorization, rate limiting, circuit breaking, idempotency, and audit logging.</td>
+</tr>
+<tr>
+<td><strong>Trajectory</strong></td>
+<td>The ordered sequence of events (including tool calls, LLM interactions, evaluation results, and delegations) that occurred during a single run/session across one or more agents.</td>
+</tr>
+<tr>
+<td><strong>Trajectory Store</strong></td>
+<td>An append-only PostgreSQL table that durably records every event in a Trajectory for audit, debugging, replay, and governance.</td>
+</tr>
+</tbody>
+</table>
+</body>
+</html>

@@ -1,4 +1,4 @@
-# Architecture Summary — Table of Contents
+# Event-driven swarm of agents architecture
 
 This summary covers the **Event-Driven Agentic Swarm Framework** for enterprise e-commerce.
 Each document is written for a project management audience and is self-contained.

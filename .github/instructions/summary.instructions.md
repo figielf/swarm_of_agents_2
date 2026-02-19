@@ -56,3 +56,16 @@ Specifically watch for changes in:
 7. **Concise** — each file should be readable in under 5 minutes.
    Prefer tables and bullet points over long prose.
 8. **No ADR references** — do not mention ADR numbers, ADR file names, or link to ADR documents.
+
+## HTML export (Confluence)
+
+After **every** update to any file under `summary/`, regenerate the corresponding HTML files
+in `summary/html/` by running:
+
+```
+.venv\Scripts\python.exe scripts/md_to_html.py
+```
+
+This script converts all `summary/*.md` files to Confluence-ready HTML under `summary/html/`.
+The HTML files are the **canonical export** for Confluence — always keep them in sync with the
+Markdown source.

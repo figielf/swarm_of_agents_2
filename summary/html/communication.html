@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Communication Patterns & Integration Paths</title>
+  <style>
+    /* === base === */
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   "Helvetica Neue", Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #172b4d;
+      max-width: 960px;
+      margin: 32px auto;
+      padding: 0 24px;
+    }
+    /* === headings === */
+    h1 { font-size: 2em;   border-bottom: 2px solid #dfe1e6; padding-bottom: 8px;  margin-top: 32px; }
+    h2 { font-size: 1.5em; border-bottom: 1px solid #dfe1e6; padding-bottom: 4px;  margin-top: 28px; }
+    h3 { font-size: 1.17em; margin-top: 24px; }
+    h4 { font-size: 1em;   margin-top: 16px; }
+    /* === tables === */
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 16px 0;
+      font-size: 13px;
+    }
+    th, td {
+      border: 1px solid #dfe1e6;
+      padding: 8px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background-color: #f4f5f7;
+      font-weight: 600;
+    }
+    tr:nth-child(even) td {
+      background-color: #fafbfc;
+    }
+    /* === code === */
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 12px;
+      background: #f4f5f7;
+      padding: 2px 5px;
+      border-radius: 3px;
+    }
+    pre {
+      background: #f4f5f7;
+      border: 1px solid #dfe1e6;
+      border-radius: 4px;
+      padding: 16px;
+      overflow-x: auto;
+      margin: 16px 0;
+    }
+    pre code {
+      background: none;
+      padding: 0;
+      font-size: 12px;
+    }
+    /* === mermaid diagram image === */
+    .mermaid-img {
+      display: block;
+      max-width: 100%;
+      border: 1px solid #dfe1e6;
+      border-radius: 4px;
+      margin: 16px 0;
+      background: #f9f9fb;
+      padding: 8px;
+    }
+    /* === blockquotes / notes === */
+    blockquote {
+      border-left: 4px solid #0052cc;
+      margin: 16px 0;
+      padding: 8px 16px;
+      background: #e9f2ff;
+      border-radius: 0 4px 4px 0;
+    }
+    /* === lists === */
+    ul, ol { margin: 8px 0 8px 24px; }
+    li { margin: 4px 0; }
+    /* === horizontal rule === */
+    hr { border: none; border-top: 1px solid #dfe1e6; margin: 24px 0; }
+    /* === strong / bold === */
+    strong { font-weight: 600; color: #172b4d; }
+    /* === links === */
+    a { color: #0052cc; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+  <!-- No Mermaid JS needed: diagrams are pre-rendered as static images via mermaid.ink -->
+</head>
+<body>
+<h1 id="communication-patterns-integration-paths">Communication Patterns &amp; Integration Paths</h1>
+<p>This document covers all communication in the framework: how agents collaborate with each other, how they invoke tools, how they reach external systems, and how responses stream back to users.</p>
+<p>The <strong>hybrid model</strong> (Coordinator-first with swarm delegation) is the recommended default.</p>
+<hr />
+<h2 id="part-1-agent-to-agent-collaboration-patterns">Part 1 — Agent-to-Agent Collaboration Patterns</h2>
+<h3 id="11-coordinator-orchestrator">1.1 Coordinator / Orchestrator</h3>
+<p>A central <strong>Coordinator Agent</strong> plans execution, delegates sub-tasks to <strong>Specialist Agents</strong> via the <strong>Event Bus</strong>, and synthesizes results.</p>
+<p><strong>When to use:</strong> Structured workflows with well-defined steps (search → filter → recommend → checkout), compliance-sensitive flows, deterministic cost budgets.</p>
+<img class="mermaid-img" src="https://mermaid.ink/img/Zmxvd2NoYXJ0IFRECiAgVVtVc2VyXSAtLT4gQ1tDb29yZGluYXRvciBBZ2VudF0KICBDIC0tPiBFQlsoRXZlbnQgQnVzKV0KICBFQiAtLT4gQTFbU3BlY2lhbGlzdCBBZ2VudCBBXQogIEVCIC0tPiBBMltTcGVjaWFsaXN0IEFnZW50IEJdCiAgQTEgLS0-IEVCCiAgQTIgLS0-IEVCCiAgRUIgLS0-IEMKICBDIC0tPiBFW0V2YWx1YXRpb24gTGF5ZXJdCiAgRSAtLT4gQwogIEMgLS0-IFU=?theme=neutral" alt="Mermaid diagram" />
+<img class="mermaid-img" src="https://mermaid.ink/img/c2VxdWVuY2VEaWFncmFtCiAgYXV0b251bWJlcgogIHBhcnRpY2lwYW50IFVzZXIKICBwYXJ0aWNpcGFudCBDb29yZCBhcyBDb29yZGluYXRvciBBZ2VudAogIHBhcnRpY2lwYW50IEJ1cyBhcyBFdmVudCBCdXMKICBwYXJ0aWNpcGFudCBBMSBhcyBTcGVjaWFsaXN0IEFnZW50IEEKICBwYXJ0aWNpcGFudCBBMiBhcyBTcGVjaWFsaXN0IEFnZW50IEIKICBwYXJ0aWNpcGFudCBFdmFsIGFzIEV2YWx1YXRpb24gTGF5ZXIKCiAgVXNlci0-PkNvb3JkOiBVc2VyIHJlcXVlc3QKICBDb29yZC0-PkJ1czogUHVibGlzaCBUYXNrKEEpCiAgQ29vcmQtPj5CdXM6IFB1Ymxpc2ggVGFzayhCKQogIEJ1cy0tPj5BMTogVGFzayhBKQogIEJ1cy0tPj5BMjogVGFzayhCKQogIEExLT4-QnVzOiBSZXN1bHQoQSkKICBBMi0-PkJ1czogUmVzdWx0KEIpCiAgQ29vcmQtPj5FdmFsOiBTeW50aGVzaXplICsgRXZhbHVhdGUKICBFdmFsLS0-PkNvb3JkOiBQYXNzL0ZhaWwgKyBmZWVkYmFjawogIENvb3JkLS0-PlVzZXI6IFJlc3BvbnNlIChzdHJlYW0p?theme=neutral" alt="Mermaid diagram" />
+<p><strong>Risks:</strong> Coordinator bottleneck; every interaction doubles LLM calls.<br />
+<strong>Mitigations:</strong> Stateless Coordinator with Event Bus-backed state recovery. Coordinator prompt auto-generated from <strong>Capability Registry</strong>.</p>
+<hr />
+<h3 id="12-leaderless-swarm-broadcast-peer-collaboration">1.2 Leaderless Swarm (Broadcast + Peer Collaboration)</h3>
+<p>A Dispatcher broadcasts a task to all participating agents. Agents collaborate via peer messages on the Event Bus and the <strong>Blackboard</strong> (Shared Memory). A Finalizer assembles the response.</p>
+<p><strong>When to use:</strong> Ambiguous problems requiring multi-perspective debate, creative synthesis, resilience-critical paths.</p>
+<img class="mermaid-img" src="https://mermaid.ink/img/Zmxvd2NoYXJ0IFRECiAgVVtVc2VyXSAtLT4gRFtEaXNwYXRjaGVyXQogIEQgLS0-IEVCWyhFdmVudCBCdXMpXQogIEVCIC0tPiBBW0FnZW50IEFdCiAgRUIgLS0-IEJbQWdlbnQgQl0KICBFQiAtLT4gQ1tBZ2VudCBDXQogIEEgPC0tPiBCCiAgQiA8LS0-IEMKICBBIDwtLT4gQwogIEEgLS0-fHdyaXRlc3wgU01bKEJsYWNrYm9hcmQpXQogIEIgLS0-fHJlYWRzL3dyaXRlc3wgU00KICBDIC0tPnxyZWFkcy93cml0ZXN8IFNNCiAgQyAtLT4gRltGaW5hbGl6ZXJdCiAgRiAtLT4gVQ==?theme=neutral" alt="Mermaid diagram" />
+<img class="mermaid-img" src="https://mermaid.ink/img/c2VxdWVuY2VEaWFncmFtCiAgYXV0b251bWJlcgogIHBhcnRpY2lwYW50IFVzZXIKICBwYXJ0aWNpcGFudCBEaXNwIGFzIERpc3BhdGNoZXIKICBwYXJ0aWNpcGFudCBCdXMgYXMgRXZlbnQgQnVzCiAgcGFydGljaXBhbnQgQSBhcyBBZ2VudCBBCiAgcGFydGljaXBhbnQgQiBhcyBBZ2VudCBCCiAgcGFydGljaXBhbnQgQyBhcyBBZ2VudCBDCiAgcGFydGljaXBhbnQgU00gYXMgQmxhY2tib2FyZAogIHBhcnRpY2lwYW50IEYgYXMgRmluYWxpemVyCgogIFVzZXItPj5EaXNwOiBVc2VyIHJlcXVlc3QKICBEaXNwLT4-QnVzOiBQdWJsaXNoIFRhc2tCcm9hZGNhc3QKICBCdXMtLT4-QTogVGFza0Jyb2FkY2FzdAogIEJ1cy0tPj5COiBUYXNrQnJvYWRjYXN0CiAgQnVzLS0-PkM6IFRhc2tCcm9hZGNhc3QKCiAgcGFyIFBlZXIgY29sbGFib3JhdGlvbgogICAgQS0-PkJ1czogTXNnKEHihpJCL0MpCiAgICBCLT4-QnVzOiBNc2coQuKGkkEvQykKICAgIEMtPj5CdXM6IE1zZyhD4oaSQS9CKQogIGVuZAoKICBBLT4-U006IFdyaXRlIGludGVybWVkaWF0ZSBmaW5kaW5ncwogIEItPj5TTTogUmVhZC93cml0ZSBpbnRlcm1lZGlhdGUgZmluZGluZ3MKICBDLT4-U006IFJlYWQvd3JpdGUgaW50ZXJtZWRpYXRlIGZpbmRpbmdzCgogIEMtPj5GOiBDYW5kaWRhdGUgYW5zd2VyCiAgRi0tPj5Vc2VyOiBSZXNwb25zZSAoc3RyZWFtKQ==?theme=neutral" alt="Mermaid diagram" />
+<p><strong>Risks:</strong> Non-convergence; unbounded chatter; cost unpredictability.<br />
+<strong>Mitigations:</strong> Turn limits and message-count budgets (<strong>Agent Runtime</strong>). Convergence detectors. Per-session token <strong>Budget Envelopes</strong> enforced at Event Bus level.</p>
+<hr />
+<h3 id="13-blackboard-shared-memory">1.3 Blackboard / Shared Memory</h3>
+<p>Opportunistic agents post observations to a shared store; other agents react to updates. Used for progressive knowledge assembly without direct orchestration (<strong>Stigmergy</strong>).</p>
+<img class="mermaid-img" src="https://mermaid.ink/img/Zmxvd2NoYXJ0IExSCiAgQkJbKEJsYWNrYm9hcmQpXQogIEExW0FnZW50IDFdIC0tPnxwb3N0fCBCQgogIEEyW0FnZW50IDJdIC0tPnxwb3N0fCBCQgogIEEzW0FnZW50IDNdIC0tPnxwb3N0fCBCQgogIEJCIC0tPnxub3RpZnkgKyByZWFkfCBBMQogIEJCIC0tPnxub3RpZnkgKyByZWFkfCBBMgogIEJCIC0tPnxub3RpZnkgKyByZWFkfCBBMw==?theme=neutral" alt="Mermaid diagram" />
+<hr />
+<h3 id="14-market-based-auction-bidding">1.4 Market-Based (Auction / Bidding)</h3>
+<p>An auctioneer broadcasts a task; agents bid based on confidence, cost, or capability. The winning agent executes.</p>
+<p><strong>When to use:</strong> Dynamic routing when agent capabilities overlap; optimize for cost, latency, or confidence.</p>
+<img class="mermaid-img" src="https://mermaid.ink/img/Zmxvd2NoYXJ0IFRECiAgUltSZXF1ZXN0IFNvdXJjZV0gLS0-IEF1Y3Rpb25bQXVjdGlvbmVlcl0KICBBdWN0aW9uIC0tPnxyZXF1ZXN0IGJpZHN8IEFbQWdlbnQgQV0KICBBdWN0aW9uIC0tPnxyZXF1ZXN0IGJpZHN8IEJbQWdlbnQgQl0KICBBdWN0aW9uIC0tPnxyZXF1ZXN0IGJpZHN8IENbQWdlbnQgQ10KICBBIC0tPnxiaWR8IEF1Y3Rpb24KICBCIC0tPnxiaWR8IEF1Y3Rpb24KICBDIC0tPnxiaWR8IEF1Y3Rpb24KICBBdWN0aW9uIC0tPnxhc3NpZ24gdGFza3wgV1tXaW5uaW5nIEFnZW50XQogIFcgLS0-fHJlc3VsdHwgQXVjdGlvbgogIEF1Y3Rpb24gLS0-IFI=?theme=neutral" alt="Mermaid diagram" />
+<hr />
+<h3 id="15-hybrid-model-recommended">1.5 Hybrid Model (Recommended)</h3>
+<p><strong>Coordinator-first, swarm-when-needed.</strong></p>
+<ul>
+<li>Default to Coordinator-managed flows for predictable workflows.</li>
+<li>Coordinators may <strong>delegate sub-problems</strong> to leaderless swarms when multi-perspective synthesis is needed.</li>
+<li>The Coordinator sets a <strong>Budget Envelope</strong> (max tokens, max turns, timeout) for any swarm delegation.</li>
+</ul>
+<p><strong>Routing mechanism:</strong> The Coordinator does not hard-code specialist references. Instead:</p>
+<ol>
+<li><strong>Capability Registry lookup</strong> — maps capability names → NATS subjects.</li>
+<li><strong>LLM-driven planning</strong> — the LLM receives user intent + capability list, decomposes into sub-tasks tagged with <code>target_capability</code>.</li>
+</ol>
+<img class="mermaid-img" src="https://mermaid.ink/img/c2VxdWVuY2VEaWFncmFtCiAgYXV0b251bWJlcgogIHBhcnRpY2lwYW50IENvb3JkIGFzIENvb3JkaW5hdG9yIEFnZW50CiAgcGFydGljaXBhbnQgUmVnIGFzIENhcGFiaWxpdHkgUmVnaXN0cnkKICBwYXJ0aWNpcGFudCBCdXMgYXMgRXZlbnQgQnVzCiAgcGFydGljaXBhbnQgUEExIGFzIFByb2R1Y3RBZ2VudCByZXBsaWNhIDEKICBwYXJ0aWNpcGFudCBQQTIgYXMgUHJvZHVjdEFnZW50IHJlcGxpY2EgMgogIHBhcnRpY2lwYW50IE9BIGFzIE9yZGVyQWdlbnQKCiAgQ29vcmQtPj5Db29yZDogTExNIHBsYW5zIHN1Yi10YXNrcyBmcm9tIHVzZXIgaW50ZW50CiAgQ29vcmQtPj5SZWc6IExvb2t1cCBjYXBhYmlsaXR5IOKGkiBzdWJqZWN0CiAgUmVnLS0-PkNvb3JkOiBwcm9kdWN0LnNlYXJjaCDihpIgdGFza3MucHJvZHVjdCwgb3JkZXIuc3RhdHVzIOKGkiB0YXNrcy5vcmRlcgoKICBDb29yZC0-PkJ1czogdGFzay5kZWxlZ2F0ZWQg4oaSICJ0YXNrcy5wcm9kdWN0IgogIENvb3JkLT4-QnVzOiB0YXNrLmRlbGVnYXRlZCDihpIgInRhc2tzLm9yZGVyIgoKICBOb3RlIG92ZXIgQnVzOiBRdWV1ZSBncm91cCBkZWxpdmVycyB0byBvbmUgcmVwbGljYQogIEJ1cy0tPj5QQTE6IHRhc2suZGVsZWdhdGVkIChwcm9kdWN0LnNlYXJjaCkKICBOb3RlIG92ZXIgUEEyOiBQQTIgaWRsZSDigJQgbm90IHNlbGVjdGVkCgogIEJ1cy0tPj5PQTogdGFzay5kZWxlZ2F0ZWQgKG9yZGVyLnN0YXR1cykKCiAgUEExLT4-QnVzOiB0YXNrLmNvbXBsZXRlZCAocHJvZHVjdCByZXN1bHRzKQogIE9BLT4-QnVzOiB0YXNrLmNvbXBsZXRlZCAob3JkZXIgc3RhdHVzKQoKICBCdXMtLT4-Q29vcmQ6IHRhc2suY29tcGxldGVkIChwcm9kdWN0IHJlc3VsdHMpCiAgQnVzLS0-PkNvb3JkOiB0YXNrLmNvbXBsZXRlZCAob3JkZXIgc3RhdHVzKQogIENvb3JkLT4-Q29vcmQ6IFN5bnRoZXNpemUgZmluYWwgcmVzcG9uc2U=?theme=neutral" alt="Mermaid diagram" />
+<p>Specialist agents subscribe via NATS JetStream <strong>queue groups</strong> — exactly one replica picks up each message, providing automatic load balancing. In swarm mode, tasks are published to a <strong>broadcast subject</strong> without a queue group so every agent receives every message.</p>
+<hr />
+<h2 id="part-2-tool-invocation-external-integration-paths">Part 2 — Tool Invocation &amp; External Integration Paths</h2>
+<p><strong>Key distinction:</strong><br />
+- <strong>Tool Gateway</strong> — governance layer for all tool calls (authZ, rate limits, idempotency, audit).<br />
+- <strong>Protocol Gateway</strong> — wire-format translator for external protocols (MCP, A2A). Internal agents never see these protocols.</p>
+<h3 id="21-agent-internal-tool-tool-gateway-only">2.1 Agent → Internal Tool (Tool Gateway only)</h3>
+<p>Tool calls to platform-owned APIs pass through the <strong>Tool Gateway</strong> for governance. No Protocol Gateway involved.</p>
+<img class="mermaid-img" src="https://mermaid.ink/img/c2VxdWVuY2VEaWFncmFtCiAgYXV0b251bWJlcgogIHBhcnRpY2lwYW50IFNBIGFzIEFnZW50CiAgcGFydGljaXBhbnQgQnVzIGFzIEV2ZW50IEJ1cwogIHBhcnRpY2lwYW50IFRHIGFzIFRvb2wgR2F0ZXdheQogIHBhcnRpY2lwYW50IEFQSSBhcyBJbnRlcm5hbCBBUEkgKFByb2R1Y3QgQ2F0YWxvZykKICBwYXJ0aWNpcGFudCBUUyBhcyBUcmFqZWN0b3J5IFN0b3JlCgogIFNBLT4-QnVzOiBQdWJsaXNoIHRvb2wuY2FsbC5yZXF1ZXN0ZWQKICBCdXMtLT4-VEc6IHRvb2wuY2FsbC5yZXF1ZXN0ZWQKCiAgVEctPj5URzogVmFsaWRhdGUgYXV0aFogKHJvbGUgY2hlY2spCiAgVEctPj5URzogUmF0ZSBsaW1pdCBjaGVjayAodG9rZW4gYnVja2V0KQogIFRHLT4-VEc6IElkZW1wb3RlbmN5IGNoZWNrIChSZWRpcykKCiAgVEctPj5BUEk6IEhUVFAgR0VUIC9wcm9kdWN0cz9xPWphY2tldAogIEFQSS0tPj5URzogMjAwIE9LIChwcm9kdWN0IGxpc3QpCgogIFRHLT4-VFM6IEFwcGVuZCB0b29sLmludm9rZWQgKyB0b29sLnJlc3VsdAogIFRHLT4-QnVzOiBQdWJsaXNoIHRvb2wuY2FsbC5jb21wbGV0ZWQKICBCdXMtLT4-U0E6IHRvb2wuY2FsbC5jb21wbGV0ZWQgKHByb2R1Y3QgbGlzdCkKCiAgTm90ZSBvdmVyIFNBLEFQSTogVG9vbCBHYXRld2F5IG9ubHkg4oCUIG5vIFByb3RvY29sIEdhdGV3YXk=?theme=neutral" alt="Mermaid diagram" />
+<hr />
+<h3 id="22-agent-external-mcp-tool-tool-gateway-protocol-gateway">2.2 Agent → External MCP Tool (Tool Gateway + Protocol Gateway)</h3>
+<p>When a tool is backed by an external MCP server, the request flows through <strong>both</strong> gateways in sequence:<br />
+- <strong>Tool Gateway</strong> handles governance (authZ, rate limits, audit)<br />
+- <strong>Protocol Gateway</strong> handles wire-format translation (MCP)</p>
+<img class="mermaid-img" src="https://mermaid.ink/img/c2VxdWVuY2VEaWFncmFtCiAgYXV0b251bWJlcgogIHBhcnRpY2lwYW50IFNBIGFzIEFnZW50CiAgcGFydGljaXBhbnQgQnVzIGFzIEV2ZW50IEJ1cwogIHBhcnRpY2lwYW50IFRHIGFzIFRvb2wgR2F0ZXdheQogIHBhcnRpY2lwYW50IFBHVyBhcyBQcm90b2NvbCBHYXRld2F5CiAgcGFydGljaXBhbnQgRU1DUCBhcyBFeHRlcm5hbCBNQ1AgU2VydmVyCiAgcGFydGljaXBhbnQgVFMgYXMgVHJhamVjdG9yeSBTdG9yZQoKICBTQS0-PkJ1czogUHVibGlzaCB0b29sLmNhbGwucmVxdWVzdGVkCiAgQnVzLS0-PlRHOiB0b29sLmNhbGwucmVxdWVzdGVkCgogIFRHLT4-VEc6IFZhbGlkYXRlIGF1dGhaICsgcmF0ZSBsaW1pdAogIFRHLT4-VEc6IERldGVjdCB0b29sIGlzIE1DUC1iYWNrZWQKCiAgVEctPj5QR1c6IEZvcndhcmQgdG9vbCBpbnZvY2F0aW9uCiAgUEdXLT4-UEdXOiBUcmFuc2xhdGUgdG8gTUNQIHRvb2xzL2NhbGwKICBQR1ctPj5QR1c6IFN0cmlwIFBJSSBmcm9tIG91dGJvdW5kIHBheWxvYWQKICBQR1ctPj5FTUNQOiBNQ1AgdG9vbHMvY2FsbCAoZXh0ZXJuYWwgbmV0d29yaykKICBFTUNQLS0-PlBHVzogTUNQIHRvb2wgcmVzdWx0CiAgUEdXLT4-UEdXOiBTYW5pdGl6ZSBpbmJvdW5kIHJlc3BvbnNlCiAgUEdXLT4-UEdXOiBUcmFuc2xhdGUgTUNQIHJlc3BvbnNlIOKGkiBFdmVudCBFbnZlbG9wZQogIFBHVy0tPj5URzogVHJhbnNsYXRlZCB0b29sIHJlc3VsdAoKICBURy0-PlRTOiBBcHBlbmQgdG9vbC5pbnZva2VkICsgdG9vbC5yZXN1bHQKICBURy0-PkJ1czogUHVibGlzaCB0b29sLmNhbGwuY29tcGxldGVkCiAgQnVzLS0-PlNBOiB0b29sLmNhbGwuY29tcGxldGVkCgogIE5vdGUgb3ZlciBURyxQR1c6IFRvb2wgR2F0ZXdheSA9IGdvdmVybmFuY2U8YnIvPlByb3RvY29sIEdhdGV3YXkgPSB3aXJlLWZvcm1hdCB0cmFuc2xhdGlvbg==?theme=neutral" alt="Mermaid diagram" />
+<hr />
+<h3 id="23-agent-external-a2a-agent-protocol-gateway-only-no-tool-gateway">2.3 Agent ↔ External A2A Agent (Protocol Gateway only, NO Tool Gateway)</h3>
+<p>Agent-to-agent delegation to an external agent uses only the <strong>Protocol Gateway</strong>. This is agent delegation, not a tool call — the Tool Gateway is <strong>not</strong> involved.</p>
+<img class="mermaid-img" src="https://mermaid.ink/img/c2VxdWVuY2VEaWFncmFtCiAgYXV0b251bWJlcgogIHBhcnRpY2lwYW50IENvb3JkIGFzIENvb3JkaW5hdG9yIEFnZW50CiAgcGFydGljaXBhbnQgQnVzIGFzIEV2ZW50IEJ1cwogIHBhcnRpY2lwYW50IFBHVyBhcyBQcm90b2NvbCBHYXRld2F5CiAgcGFydGljaXBhbnQgRUEgYXMgRXh0ZXJuYWwgQTJBIEFnZW50CiAgcGFydGljaXBhbnQgVFMgYXMgVHJhamVjdG9yeSBTdG9yZQoKICBDb29yZC0-PkJ1czogUHVibGlzaCBwcm90b2NvbC5hMmEucmVxdWVzdCAodGFzayBkZWxlZ2F0aW9uKQogIEJ1cy0tPj5QR1c6IHByb3RvY29sLmEyYS5yZXF1ZXN0CgogIFBHVy0-PlBHVzogVHJhbnNsYXRlIEV2ZW50IEVudmVsb3BlIOKGkiBBMkEgdGFzayBmb3JtYXQKICBQR1ctPj5QR1c6IFN0cmlwIFBJSSBmcm9tIG91dGJvdW5kIHBheWxvYWQKICBQR1ctPj5QR1c6IEF0dGFjaCBPQXV0aDIgY3JlZGVudGlhbHMKICBQR1ctPj5FQTogQTJBIHRhc2sgZGVsZWdhdGlvbiAoZXh0ZXJuYWwgbmV0d29yaykKCiAgRUEtLT4-UEdXOiBBMkEgdGFzayByZXN1bHQKICBQR1ctPj5QR1c6IFNhbml0aXplIGluYm91bmQgcmVzcG9uc2UKICBQR1ctPj5QR1c6IFRyYW5zbGF0ZSBBMkEgcmVzdWx0IOKGkiBFdmVudCBFbnZlbG9wZQoKICBQR1ctPj5UUzogQXBwZW5kIHByb3RvY29sLmEyYS5yZXF1ZXN0ICsgcmVzcG9uc2UKICBQR1ctPj5CdXM6IFB1Ymxpc2ggcHJvdG9jb2wuYTJhLnJlc3BvbnNlCiAgQnVzLS0-PkNvb3JkOiBwcm90b2NvbC5hMmEucmVzcG9uc2UgKHJlc3VsdCkKCiAgTm90ZSBvdmVyIENvb3JkLEVBOiBOTyBUb29sIEdhdGV3YXkg4oCUPGJyLz5Qcm90b2NvbCBHYXRld2F5IG9ubHk=?theme=neutral" alt="Mermaid diagram" />
+<hr />
+<h2 id="gateway-involvement-summary">Gateway Involvement Summary</h2>
+<table>
+<thead>
+<tr>
+<th>Communication Path</th>
+<th style="text-align: center;">Event Bus</th>
+<th style="text-align: center;">Tool Gateway</th>
+<th style="text-align: center;">Protocol Gateway</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Agent → Agent</strong> (internal)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td><strong>Agent → Internal Tool</strong></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td><strong>Agent → External API Tool</strong> (non-MCP)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td><strong>Agent → External MCP Tool</strong></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td><strong>Agent → External A2A Agent</strong></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✅</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="part-3-streaming-protocol">Part 3 — Streaming Protocol</h2>
+<p>All communication paths deliver responses using the <strong>Chunk-framed Protocol</strong>:</p>
+<img class="mermaid-img" src="https://mermaid.ink/img/c2VxdWVuY2VEaWFncmFtCiAgYXV0b251bWJlcgogIHBhcnRpY2lwYW50IEFnZW50CiAgcGFydGljaXBhbnQgQnVzIGFzIEV2ZW50IEJ1cwogIHBhcnRpY2lwYW50IFVJIGFzIENoYW5uZWwgLyBVSQoKICBBZ2VudC0-PkJ1czogc3RyZWFtLmJlZ2luIChtZXNzYWdlX2lkLCBtb2RhbGl0eT10ZXh0KQogIGxvb3AgTiBjaHVua3MgKE4g4omlIDEpCiAgICBBZ2VudC0-PkJ1czogc3RyZWFtLmNodW5rIChzZXFfbm8sIHBheWxvYWQpCiAgICBCdXMtLT4-VUk6IEZvcndhcmQgY2h1bmsKICBlbmQKICBBZ2VudC0-PkJ1czogc3RyZWFtLmVuZCAoY2hlY2tzdW0sIGZpbmFsPXRydWUpCiAgTm90ZSBvdmVyIFVJOiBTaW5nbGUgbWVzc2FnZSA9IE49MSAoQmVnaW4gKyBDaHVuayArIEVuZCk=?theme=neutral" alt="Mermaid diagram" />
+<p>Multimodal responses use the same <code>message_id</code> with different <code>modality</code> tags (text, image, carousel). The UI aligns rendering by <code>(message_id, modality, seq_no)</code>.</p>
+</body>
+</html>

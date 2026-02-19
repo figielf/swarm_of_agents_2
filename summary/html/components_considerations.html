@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Components Considerations Summary</title>
+  <style>
+    /* === base === */
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   "Helvetica Neue", Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #172b4d;
+      max-width: 960px;
+      margin: 32px auto;
+      padding: 0 24px;
+    }
+    /* === headings === */
+    h1 { font-size: 2em;   border-bottom: 2px solid #dfe1e6; padding-bottom: 8px;  margin-top: 32px; }
+    h2 { font-size: 1.5em; border-bottom: 1px solid #dfe1e6; padding-bottom: 4px;  margin-top: 28px; }
+    h3 { font-size: 1.17em; margin-top: 24px; }
+    h4 { font-size: 1em;   margin-top: 16px; }
+    /* === tables === */
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 16px 0;
+      font-size: 13px;
+    }
+    th, td {
+      border: 1px solid #dfe1e6;
+      padding: 8px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background-color: #f4f5f7;
+      font-weight: 600;
+    }
+    tr:nth-child(even) td {
+      background-color: #fafbfc;
+    }
+    /* === code === */
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 12px;
+      background: #f4f5f7;
+      padding: 2px 5px;
+      border-radius: 3px;
+    }
+    pre {
+      background: #f4f5f7;
+      border: 1px solid #dfe1e6;
+      border-radius: 4px;
+      padding: 16px;
+      overflow-x: auto;
+      margin: 16px 0;
+    }
+    pre code {
+      background: none;
+      padding: 0;
+      font-size: 12px;
+    }
+    /* === mermaid diagram image === */
+    .mermaid-img {
+      display: block;
+      max-width: 100%;
+      border: 1px solid #dfe1e6;
+      border-radius: 4px;
+      margin: 16px 0;
+      background: #f9f9fb;
+      padding: 8px;
+    }
+    /* === blockquotes / notes === */
+    blockquote {
+      border-left: 4px solid #0052cc;
+      margin: 16px 0;
+      padding: 8px 16px;
+      background: #e9f2ff;
+      border-radius: 0 4px 4px 0;
+    }
+    /* === lists === */
+    ul, ol { margin: 8px 0 8px 24px; }
+    li { margin: 4px 0; }
+    /* === horizontal rule === */
+    hr { border: none; border-top: 1px solid #dfe1e6; margin: 24px 0; }
+    /* === strong / bold === */
+    strong { font-weight: 600; color: #172b4d; }
+    /* === links === */
+    a { color: #0052cc; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+  <!-- No Mermaid JS needed: diagrams are pre-rendered as static images via mermaid.ink -->
+</head>
+<body>
+<h1 id="components-considerations-summary">Components Considerations Summary</h1>
+<p>This document summarizes architectural considerations for each framework component. Communication patterns, buy-vs-build, and high-level architecture are covered in separate documents.</p>
+<hr />
+<h2 id="1-event-taxonomy">1. Event Taxonomy</h2>
+<p>All events follow a hierarchical naming convention: <code>{category}.{action}</code> (e.g., <code>task.delegated</code>, <code>stream.chunk</code>).</p>
+<p><strong>14 event categories:</strong> <code>session</code>, <code>task</code>, <code>task.bid</code>, <code>agent</code>, <code>message</code>, <code>stream</code>, <code>tool</code>, <code>eval</code>, <code>memory</code>, <code>prompt</code>, <code>prompt_run</code>, <code>protocol</code>, <code>registry</code>, <code>system</code>.</p>
+<p><strong>Event Envelope</strong> — canonical JSON wrapper (Pydantic model):<br />
+- <code>event_id</code> (UUID v7), <code>event_type</code>, <code>version</code> (semver)<br />
+- <code>source</code>, <code>target</code>, <code>correlation_id</code>, <code>trace_id</code>, <code>span_id</code><br />
+- <code>payload</code>, <code>metadata</code>, <code>pii_flag</code><br />
+- <code>timestamp</code>, <code>idempotency_key</code></p>
+<p><strong>Schema evolution:</strong> Backward-compatible only — new optional fields allowed; new required fields, field removal, and type changes forbidden. Validation at publish time (fail-fast). JSON Schema chosen over Avro/Protobuf for Python ergonomics and log readability.</p>
+<hr />
+<h2 id="2-agent-runtime-lifecycle">2. Agent Runtime &amp; Lifecycle</h2>
+<p><strong>Technology:</strong> Custom lightweight runtime built on Python <code>asyncio</code>.</p>
+<p><strong>Lifecycle states:</strong> <code>INITIALIZING → READY → PROCESSING → (REFLECTING) → DRAINING → STOPPED</code></p>
+<table>
+<thead>
+<tr>
+<th>Config</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>max_concurrent_tasks</code></td>
+<td>10</td>
+</tr>
+<tr>
+<td>Retry policy</td>
+<td>Exponential backoff with jitter (base 1 s, max 30 s, max 3 retries)</td>
+</tr>
+<tr>
+<td>Heartbeat interval</td>
+<td>30 s</td>
+</tr>
+<tr>
+<td>Auto-deregistration</td>
+<td>After 90 s of missed heartbeats</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key behaviors:</strong><br />
+- Auto-registration with Agent Registry on startup; deregistration on graceful shutdown.<br />
+- Dead-letter queue for events that fail after max retries.<br />
+- Idempotency via <code>event_id</code> deduplication in Redis.<br />
+- Kubernetes liveness/readiness probes.<br />
+- Events consumed from NATS JetStream queue groups (competing consumers, push-based — zero CPU when idle).</p>
+<hr />
+<h2 id="3-message-schema-contracts">3. Message Schema &amp; Contracts</h2>
+<p><strong>Technology:</strong> Pydantic models + JSON Schema + git-based schema registry.</p>
+<ul>
+<li>All messages use the Event Envelope Pydantic model.</li>
+<li>Validation at publish time — malformed events never reach consumers.</li>
+<li>Large payloads use object-storage references (S3/GCS); gzip compression on NATS for messages over threshold.</li>
+<li>CI backward-compatibility checks on every schema change.</li>
+</ul>
+<p><strong>Design choice:</strong> JSON over binary formats (Avro/Protobuf) because messages are small (&lt;10 KB avg), and JSON provides superior log readability and Python developer experience.</p>
+<hr />
+<h2 id="4-streaming-chunking-multimodal-sync">4. Streaming, Chunking &amp; Multimodal Sync</h2>
+<p><strong>Protocol:</strong> Chunk-framed streaming on the Event Bus + SSE at the edge.</p>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>Fields</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>stream.begin</code></td>
+<td><code>message_id</code>, <code>trace_id</code>, <code>modality</code> (text/image/carousel), <code>expected_chunks</code></td>
+</tr>
+<tr>
+<td><code>stream.chunk</code></td>
+<td><code>seq_no</code> (1-based), <code>payload</code>, <code>is_partial</code></td>
+</tr>
+<tr>
+<td><code>stream.end</code></td>
+<td><code>message_id</code>, <code>checksum</code> (SHA-256), <code>final</code>, <code>total_chunks</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Design invariant:</strong> Single message = <code>Begin(N=1) → Chunk(seq_no=1) → End</code>. Protocol is identical for streamed and non-streamed responses.</p>
+<p><strong>Multimodal:</strong> Multiple modalities within the same turn are correlated by <code>message_id</code> and differentiated by <code>modality</code> tag. Cross-modality streams are independent (no cross-modality ordering dependency). The Channel Gateway translates <code>stream.*</code> events to SSE for browsers.</p>
+<hr />
+<h2 id="5-memory-architecture-shared-state">5. Memory Architecture &amp; Shared State</h2>
+<p><strong>Architecture:</strong> Tiered — accessed through a unified <code>MemoryClient</code> API.</p>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Technology</th>
+<th>Use</th>
+<th>Retention</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Session Memory</strong></td>
+<td>Redis</td>
+<td>In-flight conversation context, working state</td>
+<td>TTL = session duration + 1 hour</td>
+</tr>
+<tr>
+<td><strong>Blackboard</strong></td>
+<td>Redis pub/sub + hash maps</td>
+<td>Leaderless swarm collaboration (Stigmergy)</td>
+<td>TTL per task</td>
+</tr>
+<tr>
+<td><strong>Long-term Memory</strong></td>
+<td>PostgreSQL + pgvector</td>
+<td>Persistent knowledge, semantic search (RAG), history</td>
+<td>Configurable; PII per GDPR/CCPA</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Design decisions:</strong><br />
+- pgvector sufficient for Phase 1–2; dedicated vector DB (Qdrant/Weaviate) deferred to Phase 3+.<br />
+- Blackboard notifications via Redis pub/sub enable reactive agent behavior without polling.<br />
+- PII stored encrypted with per-user keys (supports GDPR right-to-deletion by key destruction).</p>
+<hr />
+<h2 id="6-tooling-integrations-tool-gateway">6. Tooling &amp; Integrations (Tool Gateway)</h2>
+<p><strong>Architecture:</strong> Centralized Tool Gateway service between agents and external systems.</p>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>AuthZ</strong></td>
+<td>Role-based access per tool; elevated authorization for sensitive tools (refund, payment)</td>
+</tr>
+<tr>
+<td><strong>Rate limiting</strong></td>
+<td>Token bucket per tool per tenant</td>
+</tr>
+<tr>
+<td><strong>Circuit breaking</strong></td>
+<td>5 consecutive failures → open for 30 s</td>
+</tr>
+<tr>
+<td><strong>Idempotency</strong></td>
+<td>Deduplication via idempotency keys in Redis cache</td>
+</tr>
+<tr>
+<td><strong>Side-effect classification</strong></td>
+<td>Tools tagged as read-only or mutating; mutating tools require explicit confirmation</td>
+</tr>
+<tr>
+<td><strong>MCP tool servers</strong></td>
+<td>External MCP-exposed tools registered via Protocol Gateway adapter</td>
+</tr>
+</tbody>
+</table>
+<p>All tool calls are logged in the Trajectory Store for audit. The gateway is stateless and horizontally scalable.</p>
+<hr />
+<h2 id="7-evaluation-reflection-guardrails">7. Evaluation, Reflection &amp; Guardrails</h2>
+<p><strong>Architecture:</strong> Built-in evaluation framework with three boundaries.</p>
+<table>
+<thead>
+<tr>
+<th>Boundary</th>
+<th>Evaluator Examples</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Tool-call</strong></td>
+<td>Input validation, SQL safety check, authorization</td>
+</tr>
+<tr>
+<td><strong>Agent output</strong></td>
+<td>Relevance, factuality, tone, hallucination detection</td>
+</tr>
+<tr>
+<td><strong>System response</strong></td>
+<td>Content policy, toxicity filter, PII leak detection</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Evaluator types:</strong> Rule-based, LLM-as-judge (GPT-4o-mini for cost efficiency), classifier-based (toxicity, brand-voice).</p>
+<p><strong>Reflection Loop</strong> — optional per-agent self-revision:<br />
+- <code>max_reflection_rounds</code>: hard cap (default: 2)<br />
+- <code>reflection_criteria</code>: list of evaluation dimensions<br />
+- <code>reflection_model</code>: can use a cheaper/faster model for self-critique</p>
+<p><strong>Mandatory system guardrails:</strong> toxicity filter, PII leak detection, content policy enforcement. Low-confidence blocks sent to human review queue instead of hard-blocking.</p>
+<hr />
+<h2 id="8-observability-tracing-replay">8. Observability, Tracing &amp; Replay</h2>
+<p><strong>Technologies:</strong> OpenTelemetry (tracing), Jaeger/Tempo (visualization), Prometheus + Grafana (metrics), <code>structlog</code> (logging), PostgreSQL (Trajectory Store).</p>
+<p><strong>Tracing:</strong> OTel Python SDK with <code>trace_id</code> spanning full user session, <code>span_id</code> per agent invocation, <code>parent_span_id</code> for delegation chains. 10% production sampling (100% for errors).</p>
+<p><strong>Metrics:</strong> Latency, throughput, error rate, token cost — all per agent, session, and tenant.</p>
+<p><strong>Trajectory Store:</strong> Append-only PostgreSQL table indexed by <code>trace_id</code>, <code>session_id</code>, <code>agent_id</code>. Records every event, tool call, LLM interaction, and evaluation result.</p>
+<p><strong>Replay modes:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Description</th>
+<th>Use Case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Cost-free</strong></td>
+<td>Read-only viewer, no execution</td>
+<td>Audit</td>
+</tr>
+<tr>
+<td><strong>Deterministic</strong></td>
+<td>Replay feeds cached tool responses</td>
+<td>Regression testing</td>
+</tr>
+<tr>
+<td><strong>Best-effort</strong></td>
+<td>Re-invokes LLM (results differ)</td>
+<td>Debugging, evaluation</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="9-scaling-deployment-isolation">9. Scaling, Deployment &amp; Isolation</h2>
+<p><strong>Deployment model:</strong> Per-agent-type Kubernetes Deployments.</p>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Approach</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Autoscaling</strong></td>
+<td>HPA on NATS JetStream pending message count per consumer group (via KEDA)</td>
+</tr>
+<tr>
+<td><strong>Multi-tenancy</strong></td>
+<td>Namespace per large tenant; shared namespace with tenant-ID filtering for small tenants</td>
+</tr>
+<tr>
+<td><strong>Deployment strategies</strong></td>
+<td>Canary (10% traffic), blue-green (Coordinator), rolling update (default)</td>
+</tr>
+<tr>
+<td><strong>Isolation</strong></td>
+<td>K8s resource limits, NATS subject prefixes, Redis key prefixes, NetworkPolicies</td>
+</tr>
+<tr>
+<td><strong>GitOps</strong></td>
+<td>ArgoCD or Flux for declarative deployments via Helm charts</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Rejected alternative:</strong> Serverless/Knative — cold-start latency incompatible with conversational agent SLOs.</p>
+<p><strong>Flash-sale handling:</strong> Pre-scaling triggered by schedule or traffic prediction. Independent agent-type scaling means only hot agents (e.g., ProductAgent) scale up.</p>
+<hr />
+<h2 id="10-security-privacy-compliance">10. Security, Privacy &amp; Compliance</h2>
+<p><strong>Approach:</strong> Defense-in-depth with per-layer controls (8 layers).</p>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Controls</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Ingress</strong></td>
+<td>JWT/OAuth2 authentication, prompt injection detection</td>
+</tr>
+<tr>
+<td><strong>Event Bus</strong></td>
+<td>mTLS between agents, topic ACLs</td>
+</tr>
+<tr>
+<td><strong>Tool Gateway</strong></td>
+<td>RBAC per tool, rate limiting, audit logging</td>
+</tr>
+<tr>
+<td><strong>Shared Memory</strong></td>
+<td>Encrypted PII fields (AES-256), per-user encryption keys</td>
+</tr>
+<tr>
+<td><strong>LLM Gateway</strong></td>
+<td>PII stripping before LLM calls</td>
+</tr>
+<tr>
+<td><strong>Evaluation Layer</strong></td>
+<td>PII leak detection in agent outputs</td>
+</tr>
+<tr>
+<td><strong>Trajectory Store</strong></td>
+<td>PII redaction in stored events</td>
+</tr>
+<tr>
+<td><strong>Egress</strong></td>
+<td>Response sanitization, content safety guardrails</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Prompt injection defense:</strong> Applied at ingress, inter-agent, and tool-output layers.</p>
+<p><strong>Agent identity:</strong> mTLS certificates; roles from AgentSpec (platform-assigned, not self-declared).</p>
+<p><strong>GDPR right-to-deletion:</strong> Per-user encryption key destruction renders all user data unreadable.</p>
+<hr />
+<h2 id="11-prompt-management-versioning">11. Prompt Management &amp; Versioning</h2>
+<p><strong>Architecture:</strong> Git-based Prompt Registry with CI regression pipeline.</p>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Storage</strong></td>
+<td>Versioned files in git (<code>prompts/agents/{agent_type}/{version}/</code>)</td>
+</tr>
+<tr>
+<td><strong>Service</strong></td>
+<td>Lightweight HTTP service serves templates by <code>(agent_id, version)</code> with in-memory caching</td>
+</tr>
+<tr>
+<td><strong>CI pipeline</strong></td>
+<td>Replay golden dataset → evaluate with Evaluation Layer → block merge if quality degrades</td>
+</tr>
+<tr>
+<td><strong>A/B testing</strong></td>
+<td>Feature flags (LaunchDarkly or in-house); promote winning prompt after statistical significance</td>
+</tr>
+<tr>
+<td><strong>Non-determinism</strong></td>
+<td>Each regression test runs 3x; median score used for pass/fail</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Rejected alternatives:</strong> External prompt platforms (Humanloop, LangFuse) — data privacy and integration concerns.</p>
+<hr />
+<h2 id="12-protocol-wrappers-mcp-a2a">12. Protocol Wrappers (MCP / A2A)</h2>
+<p><strong>Architecture:</strong> Centralized Protocol Gateway service.</p>
+<table>
+<thead>
+<tr>
+<th>Protocol</th>
+<th>Direction</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>MCP</strong></td>
+<td>Inbound + Outbound</td>
+<td>Expose tools as MCP servers; consume external MCP tool servers</td>
+</tr>
+<tr>
+<td><strong>A2A</strong></td>
+<td>Inbound + Outbound</td>
+<td>Expose agents as A2A endpoints; delegate tasks to external A2A agents</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Design:</strong> <code>ProtocolAdapter</code> abstract base class with <code>MCPAdapter</code> and <code>A2AAdapter</code> implementations. Internal agents remain protocol-agnostic — they only interact with the Event Bus. A2A AgentCards are auto-generated from AgentSpec entries in the Agent Registry.</p>
+<p><strong>Security:</strong> API key/OAuth2 at ingress, PII stripping for outbound, response sanitization for inbound.</p>
+<p><strong>Timeline:</strong> Build deferred to Phase 3 (MCP: Phase 3, A2A: Phase 4).</p>
+<hr />
+<h2 id="13-testing-simulation-load">13. Testing, Simulation &amp; Load</h2>
+<p><strong>Strategy:</strong> Automated testing pyramid with 7 levels.</p>
+<table>
+<thead>
+<tr>
+<th>Level</th>
+<th>Technology</th>
+<th>Cadence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Unit</strong></td>
+<td>pytest + mocked LLM</td>
+<td>Per PR</td>
+</tr>
+<tr>
+<td><strong>Contract</strong></td>
+<td>JSON Schema validation (schemathesis)</td>
+<td>Per PR</td>
+</tr>
+<tr>
+<td><strong>Integration</strong></td>
+<td>Docker Compose (real NATS/Redis/PG + mocked LLM)</td>
+<td>Per PR</td>
+</tr>
+<tr>
+<td><strong>Regression</strong></td>
+<td>Golden tests with real LLM</td>
+<td>Nightly</td>
+</tr>
+<tr>
+<td><strong>Load</strong></td>
+<td>Locust / k6</td>
+<td>Weekly</td>
+</tr>
+<tr>
+<td><strong>Chaos</strong></td>
+<td>Litmus</td>
+<td>Weekly</td>
+</tr>
+<tr>
+<td><strong>Simulation</strong></td>
+<td>Scripted agent behaviors, multi-agent scenarios</td>
+<td>Nightly</td>
+</tr>
+</tbody>
+</table>
+<p><strong>MockLLM service:</strong> Returns pre-recorded responses by input fingerprint — zero LLM cost for most tests.</p>
+<p><strong>Non-determinism handling:</strong> Statistical assertions (e.g., "relevance &gt; 0.7 in 90% of runs").</p>
+<hr />
+<h2 id="14-cost-latency-slos">14. Cost, Latency &amp; SLOs</h2>
+<p><strong>Service Level Objectives:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Target</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Simple query latency</td>
+<td>p50 &lt; 2 s, p95 &lt; 5 s</td>
+</tr>
+<tr>
+<td>Complex query latency</td>
+<td>p50 &lt; 5 s, p95 &lt; 15 s</td>
+</tr>
+<tr>
+<td>Agent availability</td>
+<td>99.9%</td>
+</tr>
+<tr>
+<td>Event Bus availability</td>
+<td>99.99%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Budget enforcement:</strong><br />
+- Session token budget tracked in Redis; enforced by Agent Runtime before each LLM call.<br />
+- Per-agent latency budget allocated by Coordinator (includes 50% buffer for LLM variability).<br />
+- Per-tenant rate limits at Event Bus and LLM Gateway.</p>
+<p><strong>Cost attribution:</strong> Every LLM call records model, token counts, <code>cost_usd</code>, agent, session, tenant → Prometheus → Grafana dashboards.</p>
+<p><strong>Capacity baseline:</strong> 500 concurrent sessions → 1K events/sec, 200 LLM calls/sec. Flash sale (10x): 5K sessions, 10K events/sec, 2K LLM calls/sec.</p>
+<hr />
+<h2 id="15-agent-registry-discovery">15. Agent Registry &amp; Discovery</h2>
+<p><strong>Architecture:</strong> NATS JetStream KV bucket as primary registry with async PostgreSQL mirror for audit.</p>
+<p><strong>AgentSpec</strong> — comprehensive Pydantic model declaring:<br />
+- Identity: <code>agent_type</code>, <code>version</code>, <code>owner_team</code>, <code>tenant_scope</code><br />
+- Capabilities: list of Agent Capability objects with I/O schemas<br />
+- Routing: <code>nats_subject</code>, <code>consumer_group</code>, <code>supported_patterns</code><br />
+- Runtime config: <code>max_concurrent_tasks</code>, timeouts, retries, Reflection Loop settings<br />
+- Evaluators, tools, lifecycle metadata (<code>status</code>, <code>registered_at</code>, <code>last_heartbeat</code>)</p>
+<p><strong>Capability Registry</strong> — read-only projection mapping <code>capability → agent_type + NATS subject</code>. Rebuilt on every AgentSpec change. Used by Coordinator for LLM-driven task planning.</p>
+<p><strong>Lifecycle:</strong> Heartbeat every 30 s; auto-deregistration after 90 s missed. Registry rejects duplicate capabilities or routes by <code>confidence_hint</code> for market bidding.</p>
+<p><strong>A2A integration:</strong> AgentCards auto-generated from AgentSpec entries.</p>
+</body>
+</html>
