@@ -68,6 +68,7 @@ This folder contains the architecture design for the **event-driven agentic swar
 | 01 | Architecture Overview (DataFlow + Activity) | [01_overview.md](diagrams/01_overview.md) |
 | 02 | Multi-agent Collaboration Patterns | [02_patterns.md](diagrams/02_patterns.md) |
 | 03 | Streaming Chunks & Multimodal Markers | [03_streaming_chunks.md](diagrams/03_streaming_chunks.md) |
+| 04 | Agent Communication & Tool Invocation Paths | [04_communication_and_tool_paths.md](diagrams/04_communication_and_tool_paths.md) |
 
 ## Other
 
