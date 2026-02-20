@@ -57,15 +57,21 @@ Specifically watch for changes in:
    Prefer tables and bullet points over long prose.
 8. **No ADR references** — do not mention ADR numbers, ADR file names, or link to ADR documents.
 
-## HTML export (Confluence)
+## HTML export (Confluence) — MANDATORY STEP
 
-After **every** update to any file under `summary/`, regenerate the corresponding HTML files
-in `summary/html/` by running:
+**CRITICAL: Every time you create or edit ANY file under `summary/`, you MUST regenerate
+the HTML files as the FINAL step of the same task.** This is not optional. The HTML files
+in `summary/html/` are the canonical Confluence export and must always be in sync with
+the Markdown source. A summary update is incomplete until the HTML is regenerated.
+
+Run this command after finishing all Markdown edits:
 
 ```
 .venv\Scripts\python.exe scripts/md_to_html.py
 ```
 
-This script converts all `summary/*.md` files to Confluence-ready HTML under `summary/html/`.
-The HTML files are the **canonical export** for Confluence — always keep them in sync with the
-Markdown source.
+**Checklist — apply every time `summary/` is modified:**
+1. Make all edits to `summary/*.md` files.
+2. Run the HTML export script (command above).
+3. Verify the script reports `✓` for each converted file.
+4. Only then consider the task complete.

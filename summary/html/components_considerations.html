@@ -105,7 +105,40 @@
 - <code>source</code>, <code>target</code>, <code>correlation_id</code>, <code>trace_id</code>, <code>span_id</code><br />
 - <code>payload</code>, <code>metadata</code>, <code>pii_flag</code><br />
 - <code>timestamp</code>, <code>idempotency_key</code></p>
-<p><strong>Schema evolution:</strong> Backward-compatible only — new optional fields allowed; new required fields, field removal, and type changes forbidden. Validation at publish time (fail-fast). JSON Schema chosen over Avro/Protobuf for Python ergonomics and log readability.</p>
+<h3 id="options-considered">Options Considered</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A — Flat event namespace</strong></td>
+<td>Single <code>event_type</code> string (e.g., <code>"task.assigned"</code>) with routing based on string matching</td>
+<td>Simple to implement; easy to grep in logs</td>
+<td>Name collisions at scale; no structural grouping; brittle string-based routing rules</td>
+</tr>
+<tr>
+<td><strong>B — Hierarchical event taxonomy</strong></td>
+<td>Events organized as <code>{category}.{action}</code> with centrally governed categories and team-extensible actions</td>
+<td>Clear governance and ownership; easy category-level subscriptions (<code>eval.*</code>); schema registry enforces per-category schemas</td>
+<td>Requires upfront design and governance process; risk of over-categorization</td>
+</tr>
+<tr>
+<td><strong>C — Schema-first (Avro/Protobuf)</strong></td>
+<td>Each event type defined as Avro/Protobuf schema with auto-generated typed event classes</td>
+<td>Strong compile-time guarantees; built-in schema evolution rules</td>
+<td>Weak Python tooling compared to JSON Schema; code generation adds build complexity; slower iteration</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen: Option B — Hierarchical event taxonomy with JSON Schema validation.</strong></p>
+<p>The hierarchical taxonomy was chosen because it strikes the ideal balance between developer ergonomics and long-term governance in a Python-first, rapidly-evolving multi-agent system. Unlike flat namespaces (Option A), which inevitably devolve into naming chaos as the agent roster grows, the <code>{category}.{action}</code> hierarchy gives the platform team clear ownership over the category list while allowing product teams to extend actions via PR review — a governance model that scales with the organization. Category-level subscriptions (e.g., <code>eval.*</code>) dramatically simplify consumer routing and monitoring without fragile string parsing. JSON Schema was preferred over Avro/Protobuf (Option C) because our messages are small (&lt;10 KB avg), making binary serialization savings negligible, while JSON provides superior log readability and native Pydantic integration — both critical for a Python-centric team that iterates rapidly on event shapes. Schema evolution is enforced via backward-compatible-only rules (new optional fields allowed; required field additions, removals, and type changes forbidden), with validation at publish time ensuring malformed events never reach consumers.</p>
+<p><strong>Schema evolution:</strong> Backward-compatible only — new optional fields allowed; new required fields, field removal, and type changes forbidden. Validation at publish time (fail-fast).</p>
 <hr />
 <h2 id="2-agent-runtime-lifecycle">2. Agent Runtime &amp; Lifecycle</h2>
 <p><strong>Technology:</strong> Custom lightweight runtime built on Python <code>asyncio</code>.</p>
@@ -136,6 +169,39 @@
 </tr>
 </tbody>
 </table>
+<h3 id="options-considered_1">Options Considered</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A — Adopt existing framework</strong> (LangGraph, AutoGen, CrewAI)</td>
+<td>Use a third-party agent framework for the runtime</td>
+<td>Faster time to first prototype; community support and pre-built patterns</td>
+<td>Imposes foreign execution models (graph/conversation/role-based) conflicting with event-driven design; limited retry/timeout/streaming control; deep vendor lock on fast-moving OSS; none integrate natively with NATS JetStream</td>
+</tr>
+<tr>
+<td><strong>B — Build lightweight Agent Runtime</strong></td>
+<td>Thin Python runtime on <code>asyncio</code> with configurable lifecycle, retries, health probes, and Event Bus integration</td>
+<td>Full control aligned with event-driven architecture; thin layer keeps complexity in business logic; easy to test with mocked Event Bus; no external dependency</td>
+<td>Must build and maintain lifecycle management, retry logic, health probes; ~2–3 weeks initial engineering; ~0.5 FTE maintenance first year</td>
+</tr>
+<tr>
+<td><strong>C — Container-per-invocation</strong> (Knative / FaaS)</td>
+<td>Each agent invocation runs as a separate container</td>
+<td>Perfect isolation; auto-scaling to zero when idle</td>
+<td>Cold starts (1–5 s) unacceptable for interactive e-commerce chat; every invocation re-fetches context; higher cost at sustained load</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen: Option B — Build a lightweight Agent Runtime.</strong></p>
+<p>Building a custom runtime was the clear winner because it provides the architectural alignment, latency guarantees, and operational control that no existing framework can match for our specific design. Existing agent frameworks (Option A) impose their own execution models — LangGraph is graph-centric, AutoGen is conversation-loop-centric, CrewAI is role-centric — none of which align with our Event Bus–driven, pub/sub architecture built on NATS JetStream. The wrapping effort needed to shoehorn any of these frameworks into our event-driven paradigm would negate the "buy" advantage and create a fragile dual-abstraction layer. Serverless (Option C) was rejected outright because cold-start latency of 1–5 seconds is incompatible with interactive chatbot SLOs (p95 &lt; 5 s). By building our own thin runtime, we get first-class integration with NATS JetStream consumer groups (competing consumers, push-based subscription with zero CPU when idle), configurable retry policies with exponential backoff and jitter, per-agent concurrency limits, graceful shutdown with connection draining, automatic AgentSpec registration/deregistration with the Agent Registry, and reflection loop support — all tailored precisely to our architecture. The estimated 2–3 week investment is modest compared to the months of integration pain that framework adoption would create.</p>
 <p><strong>Key behaviors:</strong><br />
 - Auto-registration with Agent Registry on startup; deregistration on graceful shutdown.<br />
 - Dead-letter queue for events that fail after max retries.<br />
@@ -151,6 +217,39 @@
 <li>Large payloads use object-storage references (S3/GCS); gzip compression on NATS for messages over threshold.</li>
 <li>CI backward-compatibility checks on every schema change.</li>
 </ul>
+<h3 id="options-considered_2">Options Considered</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A — JSON Schema + Pydantic</strong> with git-based registry</td>
+<td>Pydantic models auto-generate JSON Schemas; schemas versioned in git; CI validates backward compatibility</td>
+<td>Excellent Python support; JSON is lingua franca with zero serialization overhead; schema files are reviewable in PRs; Pydantic models auto-generate schemas</td>
+<td>JSON Schema lacks built-in compatibility checking (must be tooled); no binary efficiency (larger than Avro/Protobuf)</td>
+</tr>
+<tr>
+<td><strong>B — Avro + Confluent Schema Registry</strong></td>
+<td>Events serialized as Avro with Confluent Schema Registry enforcing compatibility</td>
+<td>Battle-tested compatibility checking (backward/forward/full); compact binary format; widely used in Kafka ecosystems</td>
+<td>Not using Kafka (NATS is our bus); Avro Python tooling less ergonomic than Pydantic; running Confluent Registry adds operational burden; binary format harder to inspect in logs</td>
+</tr>
+<tr>
+<td><strong>C — Protobuf + buf.build</strong></td>
+<td>Events defined as Protobuf messages with buf.build for linting and breaking-change detection</td>
+<td>Strong typing with code generation; efficient binary serialization; modern buf.build tooling</td>
+<td>Protobuf C extension compilation issues in Python; code generation adds build steps; binary format reduces log/trajectory readability</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen: Option A — JSON Schema with Pydantic models and a git-based schema registry.</strong></p>
+<p>JSON Schema with Pydantic was chosen because it delivers the best developer experience for a Python-first team while providing all the schema governance needed for production multi-agent communication. Our messages average under 10 KB, which means the binary efficiency advantage of Avro (Option B) or Protobuf (Option C) is negligible — we simply don't have the payload sizes that justify the operational cost of a dedicated schema registry service or the DX friction of code generation pipelines. JSON's readability is a massive operational advantage: when debugging production issues at 2 AM, engineers can read event payloads directly in logs, the Trajectory Store viewer, and NATS monitoring tools without deserialization tooling. Pydantic's <code>model_json_schema()</code> auto-generates schemas from the same models used in code, eliminating schema drift by construction. The git-based registry means schema changes go through the same PR review process as code, with CI enforcing backward compatibility rules (additive-only changes). This approach keeps the operational footprint minimal — no Confluent Schema Registry to run (Option B) and no Protobuf compilation chain to maintain (Option C) — while still providing publish-time validation that rejects malformed events before they ever reach a consumer.</p>
 <p><strong>Design choice:</strong> JSON over binary formats (Avro/Protobuf) because messages are small (&lt;10 KB avg), and JSON provides superior log readability and Python developer experience.</p>
 <hr />
 <h2 id="4-streaming-chunking-multimodal-sync">4. Streaming, Chunking &amp; Multimodal Sync</h2>
@@ -177,6 +276,39 @@
 </tr>
 </tbody>
 </table>
+<h3 id="options-considered_3">Options Considered</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A — Raw byte streaming</strong> (SSE/WebSocket passthrough)</td>
+<td>Agents produce raw byte streams passed directly to the UI</td>
+<td>Simple; no framing overhead</td>
+<td>No explicit begin/end markers; no multimodal correlation; replay requires byte-level reconstruction; incompatible with discrete-event pub/sub bus</td>
+</tr>
+<tr>
+<td><strong>B — Chunk-framed protocol on Event Bus</strong></td>
+<td>Each response is <code>stream.begin → stream.chunk[1..N] → stream.end</code> as discrete events on the Event Bus</td>
+<td>Unified protocol for streamed and non-streamed responses (<code>N=1</code>); natural fit for Event Bus; full trajectory capture; multimodal alignment via <code>correlation_group</code> and <code>modality</code></td>
+<td>Slightly higher overhead (event envelope per chunk); requires sequence-number tracking and checksum validation</td>
+</tr>
+<tr>
+<td><strong>C — SSE at gateway, events internally</strong></td>
+<td>SSE between Channel Gateway and UI, chunk-framed events internally</td>
+<td>SSE is well-supported by browsers; good for incremental rendering</td>
+<td>Not mutually exclusive with Option B — SSE is a transport concern at the edge, not an internal protocol alternative</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen: Option B — Chunk-framed streaming on the Event Bus + SSE at the Channel Gateway edge.</strong></p>
+<p>The chunk-framed protocol was chosen because it is the only option that satisfies all three critical requirements simultaneously: multimodal synchronization, full-fidelity trajectory replay, and Event Bus compatibility. Raw byte streaming (Option A) fundamentally breaks our event-driven architecture — the Event Bus operates on discrete, self-describing messages, not raw byte streams, and byte-level replay is impractical for debugging multi-agent interactions. The chunk-framed approach gives us a unified protocol where even single-message responses follow the same <code>Begin(N=1) → Chunk(seq_no=1) → End</code> pattern, eliminating the special-case handling that plagues systems with separate streamed and non-streamed code paths. Multimodal e-commerce responses (text + product cards + image carousels from different agents) are correlated via <code>correlation_group</code> and <code>modality</code> tags, with each modality rendered independently using per-modality <code>seq_no</code> ordering — no cross-modality ordering dependency, which keeps the UI responsive even when one modality's agent is slower. SSE at the Channel Gateway edge (Option C's contribution) provides a thin, browser-friendly translation layer without polluting the internal protocol. Every chunk being a discrete Trajectory Store event means replay is trivial — just re-sequence the events and render.</p>
 <p><strong>Design invariant:</strong> Single message = <code>Begin(N=1) → Chunk(seq_no=1) → End</code>. Protocol is identical for streamed and non-streamed responses.</p>
 <p><strong>Multimodal:</strong> Multiple modalities within the same turn are correlated by <code>message_id</code> and differentiated by <code>modality</code> tag. Cross-modality streams are independent (no cross-modality ordering dependency). The Channel Gateway translates <code>stream.*</code> events to SSE for browsers.</p>
 <hr />
@@ -212,6 +344,39 @@
 </tr>
 </tbody>
 </table>
+<h3 id="options-considered_4">Options Considered</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A — Redis for everything</strong></td>
+<td>Use Redis for session, blackboard, and long-term storage (with RediSearch for vectors)</td>
+<td>Single technology to operate; sub-millisecond reads/writes; Redis pub/sub supports blackboard notifications</td>
+<td>Volatile by default (RDB/AOF adds complexity); RediSearch less mature than pgvector; long-term history is expensive in RAM; poor support for complex queries (joins, aggregations)</td>
+</tr>
+<tr>
+<td><strong>B — Tiered: Redis + PostgreSQL/pgvector</strong></td>
+<td>Redis for session memory and blackboard; PostgreSQL with pgvector for long-term and semantic memory</td>
+<td>Best tool for each tier; PostgreSQL is a common enterprise dependency; pgvector handles moderate-scale vector search; Redis excels at high-throughput ephemeral data</td>
+<td>Two technologies to operate; cross-tier queries require application-level joins</td>
+</tr>
+<tr>
+<td><strong>C — Tiered + dedicated vector DB</strong> (Qdrant/Weaviate)</td>
+<td>Same as Option B but with a dedicated vector database instead of pgvector</td>
+<td>Better performance at very large vector scales (&gt;10M embeddings); advanced vector search features (filtering, HNSW tuning)</td>
+<td>Third technology to operate; overkill for Phase 1–2 (typical catalog &lt;1M products)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen: Option B — Tiered (Redis + PostgreSQL/pgvector).</strong></p>
+<p>The tiered architecture was chosen because it applies the right tool to each memory tier's unique access pattern, while minimizing operational overhead by using only two well-understood, widely-deployed technologies. Redis is the natural fit for session memory and the blackboard: its sub-millisecond latency meets the sub-10ms read requirement for in-flight conversation context, its TTL support provides automatic cleanup of ephemeral session data, and its pub/sub mechanism enables reactive blackboard notifications that power leaderless swarm collaboration without polling. PostgreSQL handles long-term memory, audit history, and semantic search via pgvector — it provides the durability, complex query support, and compliance-ready data management (GDPR right-to-deletion, configurable retention policies) that Redis fundamentally cannot. Using Redis for everything (Option A) would force long-term history into expensive RAM and sacrifice the rich query capabilities needed for historical analysis and compliance reporting. A dedicated vector DB (Option C) was explicitly deferred: with a typical e-commerce catalog under 1M products, pgvector comfortably handles ANN search within SLO. If p95 vector search latency degrades beyond 50ms at scale, the unified <code>MemoryClient</code> API makes migrating the vector tier to Qdrant or Weaviate a backend swap transparent to agents — a Phase 3+ consideration.</p>
 <p><strong>Design decisions:</strong><br />
 - pgvector sufficient for Phase 1–2; dedicated vector DB (Qdrant/Weaviate) deferred to Phase 3+.<br />
 - Blackboard notifications via Redis pub/sub enable reactive agent behavior without polling.<br />
@@ -253,6 +418,39 @@
 </tr>
 </tbody>
 </table>
+<h3 id="options-considered_5">Options Considered</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A — Direct tool invocation</strong> (no gateway)</td>
+<td>Agents call external tools directly via HTTP/SDK</td>
+<td>Simplest implementation; no additional latency</td>
+<td>No centralized authZ, rate limiting, or audit; each agent implements its own retry/circuit-breaker logic; tool changes require updating every consuming agent; no idempotency enforcement</td>
+</tr>
+<tr>
+<td><strong>B — Centralized Tool Gateway</strong></td>
+<td>Dedicated service that validates, rate-limits, circuit-breaks, and audits all tool calls</td>
+<td>Centralized security, audit, and governance; tool changes isolated from agents; idempotency keys prevent duplicate side effects; rate limiting protects downstream systems</td>
+<td>Adds one extra network hop of latency; gateway is a critical-path component requiring high availability</td>
+</tr>
+<tr>
+<td><strong>C — Sidecar / middleware pattern</strong></td>
+<td>Tool gateway logic runs as a sidecar in each agent pod</td>
+<td>No extra network hop; distributed with no single point of failure</td>
+<td>Inconsistent policy enforcement across agents; updates require redeploying all agents; audit log aggregation is more complex</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen: Option B — Centralized Tool Gateway service.</strong></p>
+<p>The centralized gateway was chosen because tool invocations in e-commerce are security-critical operations — placing orders, issuing refunds, accessing customer PII — where centralized policy enforcement is non-negotiable. Direct invocation (Option A) scatters authZ, rate limiting, and audit across every agent, creating an ungovernable surface area where a single misconfigured agent can issue unauthorized refunds or exhaust a downstream API's rate limit. The sidecar approach (Option C) distributes the logic but introduces consistency risks: updating authorization policies requires redeploying every agent pod, and audit log aggregation becomes a distributed systems problem rather than a simple centralized store. The centralized gateway provides a single chokepoint where every tool call is authenticated against the agent's role in the AgentSpec, rate-limited per tool per tenant via token bucket, protected by circuit breakers (5 consecutive failures → 30s open), and logged to the Trajectory Store for audit and replay. The extra network hop adds minimal latency (typically &lt;5ms for an in-cluster call) and is dwarfed by the tool execution time itself (100ms–5s for external APIs). The gateway is stateless and horizontally scalable, making high availability straightforward. For MCP tool servers, the gateway integrates with the Protocol Gateway adapter, keeping agents protocol-agnostic.</p>
 <p>All tool calls are logged in the Trajectory Store for audit. The gateway is stateless and horizontally scalable.</p>
 <hr />
 <h2 id="7-evaluation-reflection-guardrails">7. Evaluation, Reflection &amp; Guardrails</h2>
@@ -279,6 +477,39 @@
 </tr>
 </tbody>
 </table>
+<h3 id="options-considered_6">Options Considered</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A — External evaluation service</strong> (Patronus AI, Galileo, Arthur AI)</td>
+<td>Third-party evaluation platform called post-generation</td>
+<td>Pre-built evaluators for hallucination, toxicity, relevance; managed service with dashboards</td>
+<td>External API latency per evaluation; per-invocation cost at scale; data privacy concerns (agent outputs leave network); limited domain-specific customization</td>
+</tr>
+<tr>
+<td><strong>B — Built-in evaluation framework</strong></td>
+<td>In-house evaluator interface with rule-based, LLM-as-judge, and classifier-based evaluator types</td>
+<td>Full control over logic, latency, and data privacy; domain-specific evaluators (price accuracy, inventory checks); no external data exposure; evaluation results are first-class Trajectory Store events</td>
+<td>Must build and maintain evaluators; LLM-as-judge adds LLM cost (mitigated by fast/cheap models)</td>
+</tr>
+<tr>
+<td><strong>C — Hybrid (built-in + optional external)</strong></td>
+<td>Build framework in-house with plugin support for external evaluators</td>
+<td>Best of both worlds: domain-specific in-house + specialized third-party for general safety</td>
+<td>Integration complexity with external APIs; increased surface area</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen: Option B — Built-in evaluation framework, with Option C extensibility for Phase 3+.</strong></p>
+<p>The built-in framework was chosen because evaluation is a core competency in an agentic system, not a peripheral concern that can be outsourced. External evaluation services (Option A) introduce three unacceptable trade-offs: network latency (adding an external API round-trip to every agent output evaluation threatens the 500ms p95 latency guardrail budget), data privacy exposure (sending every agent response to a third party in an e-commerce context handling PII, payment data, and proprietary pricing), and limited domain-specific coverage (off-the-shelf evaluators cannot check e-commerce-specific invariants like pricing accuracy, inventory consistency, or promotional rule compliance). By building in-house, we maintain full control over the evaluation pipeline with zero data leaving the network, and we can implement domain-specific evaluators that directly query session memory and the product catalog for ground-truth validation. The LLM-as-judge cost concern is mitigated by using GPT-4o-mini (or equivalent cheap/fast model), running LLM judges selectively (only at agent output and system boundaries, not every tool call), and caching evaluations for identical outputs. The three-boundary design (tool-call, agent output, system response) ensures defense-in-depth without over-evaluating. Plugin extensibility (Option C) is explicitly planned for Phase 3+ to allow future integration with specialized safety platforms if needed.</p>
 <p><strong>Evaluator types:</strong> Rule-based, LLM-as-judge (GPT-4o-mini for cost efficiency), classifier-based (toxicity, brand-voice).</p>
 <p><strong>Reflection Loop</strong> — optional per-agent self-revision:<br />
 - <code>max_reflection_rounds</code>: hard cap (default: 2)<br />
@@ -288,6 +519,39 @@
 <hr />
 <h2 id="8-observability-tracing-replay">8. Observability, Tracing &amp; Replay</h2>
 <p><strong>Technologies:</strong> OpenTelemetry (tracing), Jaeger/Tempo (visualization), Prometheus + Grafana (metrics), <code>structlog</code> (logging), PostgreSQL (Trajectory Store).</p>
+<h3 id="options-considered_7">Options Considered</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A — Managed observability platform</strong> (Datadog, New Relic, Honeycomb)</td>
+<td>Use a third-party managed platform for tracing, metrics, and logging</td>
+<td>Pre-built dashboards, alerting, AIOps, anomaly detection; managed storage and retention; team familiarity</td>
+<td>Cost scales linearly with high-cardinality event volume; cannot serve as Trajectory Store for replay (data model mismatch); limited custom replay queries</td>
+</tr>
+<tr>
+<td><strong>B — OpenTelemetry + custom Trajectory Store</strong></td>
+<td>OTel for tracing/metrics export; append-only PostgreSQL table for trajectory capture and replay</td>
+<td>Industry-standard vendor-neutral tracing; full-fidelity replay (not just trace visualizations); clear separation of live observability and audit/replay; PostgreSQL already in stack</td>
+<td>Must build Trajectory Store schema and replay engine; OTel instrumentation requires wrapping every agent and tool call</td>
+</tr>
+<tr>
+<td><strong>C — Event sourcing with NATS log</strong></td>
+<td>Use the Event Bus itself (NATS JetStream retention) as the event log</td>
+<td>No separate Trajectory Store; natural event sourcing pattern</td>
+<td>NATS retention is time/size-based (long-term audit requires external archival); querying NATS for replay less ergonomic than PostgreSQL SQL; mixing operational and audit data complicates capacity planning</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen: Option B — OpenTelemetry + custom Trajectory Store in PostgreSQL.</strong></p>
+<p>OpenTelemetry with a dedicated Trajectory Store was chosen because our system has two fundamentally different observability needs that no single solution addresses. Live operational observability (latency dashboards, error rates, alert thresholds) demands the vendor-neutral ecosystem of OpenTelemetry — it instruments every agent, tool call, and Event Bus interaction with distributed traces (<code>trace_id</code> spanning full sessions, <code>span_id</code> per agent invocation, <code>parent_span_id</code> for delegation chains) and exports to Jaeger/Tempo for visualization and Prometheus/Grafana for metrics. But live tracing is insufficient for our replay and regression testing needs: we need full-fidelity event replay where every event envelope with its complete payload is stored, queryable by <code>trace_id</code>, <code>session_id</code>, and <code>agent_id</code>, and replayable in three modes (cost-free audit viewing, deterministic replay with cached tool responses for regression testing, and best-effort replay with live LLM calls for prompt evaluation). Managed platforms (Option A) cannot serve as a Trajectory Store — their data models are optimized for trace visualization, not event replay, and their per-event pricing at 1000+ events/second would be prohibitive. Event sourcing on NATS (Option C) provides natural event capture but lacks the SQL query ergonomics needed for complex replay queries and the long-term retention guarantees needed for compliance (90+ day audit trails). PostgreSQL is already in our stack for long-term memory, making the Trajectory Store a natural extension with zero additional operational burden.</p>
 <p><strong>Tracing:</strong> OTel Python SDK with <code>trace_id</code> spanning full user session, <code>span_id</code> per agent invocation, <code>parent_span_id</code> for delegation chains. 10% production sampling (100% for errors).</p>
 <p><strong>Metrics:</strong> Latency, throughput, error rate, token cost — all per agent, session, and tenant.</p>
 <p><strong>Trajectory Store:</strong> Append-only PostgreSQL table indexed by <code>trace_id</code>, <code>session_id</code>, <code>agent_id</code>. Records every event, tool call, LLM interaction, and evaluation result.</p>
@@ -351,6 +615,39 @@
 </tr>
 </tbody>
 </table>
+<h3 id="options-considered_8">Options Considered</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A — Monolithic deployment</strong></td>
+<td>All agents in one process/container</td>
+<td>Simplest deployment; single container</td>
+<td>No independent scaling; one agent failure crashes all; cannot allocate different resources per agent type</td>
+</tr>
+<tr>
+<td><strong>B — Per-agent-type K8s Deployments</strong></td>
+<td>Each agent type is a separate Kubernetes Deployment with own replica count, resources, and HPA</td>
+<td>Independent scaling (hot agents scale without scaling everything); fault isolation; independent deployments; per-agent resource tuning</td>
+<td>More Kubernetes objects to manage; must standardize agent packaging (Docker image, Helm chart)</td>
+</tr>
+<tr>
+<td><strong>C — Serverless / Knative</strong> (scale to zero)</td>
+<td>Each agent invocation runs as a separate container with auto-scaling to zero</td>
+<td>True scale-to-zero for idle agents; automatic scaling based on request volume</td>
+<td>Cold start latency (1–5 s) unacceptable for interactive chat; less control over scaling behavior; complex Event Bus networking</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen: Option B — Per-agent-type Kubernetes Deployments.</strong></p>
+<p>Per-agent-type Deployments were chosen because e-commerce traffic is inherently spiky and unevenly distributed across agent types, making independent scaling a hard requirement. During a flash sale, the ProductSearchAgent may need to scale from 5 to 50 pods while the OrderTrackingAgent remains at 2 — monolithic deployment (Option A) would force scaling the entire system 10x, wasting resources on agents with no load increase. Serverless (Option C) was rejected because cold-start latency of 1–5 seconds fundamentally violates interactive chatbot SLOs, and the complex networking required to integrate Knative with NATS JetStream consumer groups introduces unnecessary operational fragility. Per-agent-type Deployments provide fault isolation (a crashing ProductSearchAgent doesn't take down the Coordinator), independent deployment cadence (the recommendation team can ship model updates without touching the order management agents), and per-agent resource tuning (memory-heavy RAG agents get more RAM; CPU-bound coordinator agents get more CPU). Autoscaling uses KEDA to watch NATS JetStream pending message count per consumer group — a direct measure of agent backlog — rather than CPU/memory metrics that correlate poorly with LLM-bound workloads. The operational complexity of managing many Deployments is mitigated by standardized Helm chart templates and GitOps (ArgoCD/Flux), ensuring dev/staging/prod consistency with configuration-as-code.</p>
 <p><strong>Rejected alternative:</strong> Serverless/Knative — cold-start latency incompatible with conversational agent SLOs.</p>
 <p><strong>Flash-sale handling:</strong> Pre-scaling triggered by schedule or traffic prediction. Independent agent-type scaling means only hot agents (e.g., ProductAgent) scale up.</p>
 <hr />
@@ -398,6 +695,33 @@
 </tr>
 </tbody>
 </table>
+<h3 id="options-considered_9">Options Considered</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A — Perimeter-only security</strong></td>
+<td>Secure at the API gateway; trust all internal components</td>
+<td>Simplest implementation; lowest engineering effort</td>
+<td>Internal compromise is unrestricted (no defense in depth); prompt injection bypasses perimeter; not PCI-DSS compliant (requires internal segmentation)</td>
+</tr>
+<tr>
+<td><strong>B — Defense-in-depth</strong> with per-layer controls</td>
+<td>Security controls at every layer: ingress, Event Bus, Tool Gateway, Memory, LLM Gateway, Evaluation, Trajectory Store, and egress</td>
+<td>Defense in depth — compromise of one layer doesn't expose the system; compliance-ready (GDPR/CCPA/PCI-DSS); full audit trail with PII controls</td>
+<td>Higher implementation and operational complexity; performance overhead from encryption, validation, and scanning at each layer</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen: Option B — Defense-in-depth with per-layer controls.</strong></p>
+<p>Defense-in-depth was chosen because an e-commerce agentic system handles the trifecta of sensitive data — customer PII, payment information, and business-critical operations (refunds, price changes) — making perimeter-only security (Option A) fundamentally inadequate and non-compliant with PCI-DSS requirements for internal segmentation. The multi-agent architecture introduces unique attack vectors that don't exist in traditional web applications: prompt injection can arrive at ingress (user input), inter-agent (a compromised agent's output is another agent's input), and tool-output (external API responses containing injected content) — all three vectors require dedicated detection at their respective boundaries. The eight-layer security model ensures that even if an attacker breaches the API gateway, they face mTLS on the Event Bus (preventing unauthorized agent impersonation), RBAC at the Tool Gateway (preventing unauthorized tool access), PII encryption in Shared Memory (preventing data exfiltration from the store), PII stripping at the LLM Gateway (preventing data leakage to external LLM providers), PII leak detection at the Evaluation Layer (catching accidental exposure in agent outputs), PII redaction in the Trajectory Store (protecting audit data), and response sanitization at egress (final safety net). Agent identity is established at startup via mTLS certificates with roles platform-assigned from the AgentSpec — agents cannot self-declare elevated permissions. GDPR right-to-deletion is supported via per-user encryption key destruction, which renders all user data across all stores unreadable without requiring record-by-record deletion.</p>
 <p><strong>Prompt injection defense:</strong> Applied at ingress, inter-agent, and tool-output layers.</p>
 <p><strong>Agent identity:</strong> mTLS certificates; roles from AgentSpec (platform-assigned, not self-declared).</p>
 <p><strong>GDPR right-to-deletion:</strong> Per-user encryption key destruction renders all user data unreadable.</p>
@@ -434,6 +758,39 @@
 </tr>
 </tbody>
 </table>
+<h3 id="options-considered_10">Options Considered</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A — Prompts in code</strong> (hardcoded strings)</td>
+<td>Prompts checked into source code as string literals</td>
+<td>Simple; version-controlled via git; no additional infrastructure</td>
+<td>Prompt changes require full code deployments; no A/B testing or dynamic rollback; hard to run automated regression suites against prompt-only changes</td>
+</tr>
+<tr>
+<td><strong>B — Dedicated prompt platform</strong> (Humanloop, PromptLayer, LangFuse)</td>
+<td>Third-party prompt management platform with versioning and analytics</td>
+<td>Pre-built versioning, A/B testing, analytics; UI for non-engineers</td>
+<td>External dependency with data leaving network; cost at scale; integration complexity with Event Bus and Evaluation Layer</td>
+</tr>
+<tr>
+<td><strong>C — Git-based Prompt Registry</strong> with CI regression</td>
+<td>Prompts as versioned files in git; lightweight HTTP service for runtime delivery; CI pipeline runs regression suites on changes</td>
+<td>Version history via git with PR-based review; CI regression blocks merges if quality degrades; no external dependency; rollback = revert version</td>
+<td>Must build Prompt Registry service and CI pipeline; A/B testing requires feature-flag integration</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen: Option C — Git-based Prompt Registry with CI-driven regression pipeline.</strong></p>
+<p>The git-based approach was chosen because prompts are the most frequently changed artifact in an agentic system and simultaneously the most dangerous — a bad prompt can silently degrade all agent responses — making automated quality gates and auditability paramount. Hardcoded prompts (Option A) conflate prompt changes with code deployments, preventing the rapid prompt iteration cycles that LLM-based systems demand and making it impossible to A/B test prompt variants or roll back a prompt without a full redeployment. External prompt platforms (Option B) introduce unacceptable data privacy risks — prompts encode proprietary business logic, pricing strategies, and competitive positioning that should not leave the network — and create vendor dependency for a core competency. The git-based registry treats prompts as first-class versioned artifacts with the same review and governance process as code: prompt changes go through PRs with team review, CI automatically replays golden test datasets through the agent with the new prompt, the Evaluation Layer scores outputs against baseline metrics (relevance, factuality, safety), and merges are blocked if any metric degrades beyond threshold. Each regression test runs 3x with median scoring to handle LLM non-determinism. At runtime, the Prompt Registry service serves templates by <code>(agent_id, version)</code> with in-memory caching and instant version rollback via API call — no redeployment required. A/B testing is layered on top via feature flags that select prompt versions per session, with evaluation metrics tracked per version and automatic promotion after statistical significance.</p>
 <p><strong>Rejected alternatives:</strong> External prompt platforms (Humanloop, LangFuse) — data privacy and integration concerns.</p>
 <hr />
 <h2 id="12-protocol-wrappers-mcp-a2a">12. Protocol Wrappers (MCP / A2A)</h2>
@@ -459,6 +816,39 @@
 </tr>
 </tbody>
 </table>
+<h3 id="options-considered_11">Options Considered</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A — Embed protocol handling in each agent</strong></td>
+<td>Each agent implements protocol handling (MCP/A2A) directly in its code</td>
+<td>No additional service</td>
+<td>Protocol logic scattered across agents; inconsistent implementations; security enforcement is per-agent with no centralized policy; protocol updates require changing every affected agent</td>
+</tr>
+<tr>
+<td><strong>B — Centralized Protocol Gateway</strong></td>
+<td>Dedicated service for all protocol translation (MCP ↔ Event Bus, A2A ↔ Event Bus)</td>
+<td>Single point of protocol translation (easy to update); centralized security (authZ, rate limits, validation); internal agents remain protocol-agnostic</td>
+<td>Additional service to operate; single point of failure for protocol interactions (mitigated by replication)</td>
+</tr>
+<tr>
+<td><strong>C — Sidecar protocol adapters</strong></td>
+<td>Each agent pod runs a sidecar handling protocol translation</td>
+<td>Distributed with no central bottleneck</td>
+<td>Sidecar updates require bouncing all pods; harder to enforce centralized security; more resource overhead (one sidecar per agent pod)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen: Option B — Centralized Protocol Gateway service.</strong></p>
+<p>The centralized gateway was chosen because protocol interoperability is an evolving, cross-cutting concern that must be managed as a single responsibility rather than scattered across the agent fleet. Both MCP and A2A are rapidly evolving protocols — embedding handling directly in agents (Option A) means every protocol spec update requires coordinated changes across every agent that participates in external communication, creating an update bottleneck that only worsens as the agent roster grows. The sidecar approach (Option C) distributes this burden but multiplies resource consumption (one sidecar per agent pod) and makes centralized security enforcement difficult — every sidecar must independently enforce authZ, rate limits, and input validation for untrusted external callers. The centralized Protocol Gateway provides a clean abstraction: internal agents interact only with the Event Bus and remain entirely protocol-agnostic, while the gateway handles bidirectional translation for both protocols. For MCP, it registers external tool servers and translates internal <code>tool.invoked</code> events into MCP requests (outbound), and exposes selected internal tools as MCP servers for external consumers (inbound). For A2A, it translates <code>protocol.a2a.request</code> events into A2A task delegations (outbound) and maps incoming A2A requests to internal <code>task.created</code> events (inbound). A2A AgentCards are auto-generated from AgentSpec entries in the Agent Registry, keeping external discovery in sync with internal capabilities automatically. Security is enforced at the gateway boundary: API key/OAuth2 for inbound, PII stripping for outbound, and response sanitization for all inbound responses before they enter the Event Bus. Build is deferred to Phase 3 (MCP) and Phase 4 (A2A) to focus initial effort on core platform capabilities.</p>
 <p><strong>Design:</strong> <code>ProtocolAdapter</code> abstract base class with <code>MCPAdapter</code> and <code>A2AAdapter</code> implementations. Internal agents remain protocol-agnostic — they only interact with the Event Bus. A2A AgentCards are auto-generated from AgentSpec entries in the Agent Registry.</p>
 <p><strong>Security:</strong> API key/OAuth2 at ingress, PII stripping for outbound, response sanitization for inbound.</p>
 <p><strong>Timeline:</strong> Build deferred to Phase 3 (MCP: Phase 3, A2A: Phase 4).</p>
@@ -511,6 +901,33 @@
 </tr>
 </tbody>
 </table>
+<h3 id="options-considered_12">Options Considered</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A — Manual testing only</strong></td>
+<td>No automated tests; rely on human QA</td>
+<td>None meaningful for production systems</td>
+<td>Unacceptable for enterprise e-commerce; non-repeatable, slow, error-prone; emergent multi-agent failures invisible until production</td>
+</tr>
+<tr>
+<td><strong>B — Comprehensive automated testing pyramid</strong></td>
+<td>7-level pyramid (unit → contract → integration → regression → load → chaos → simulation) with MockLLM for cost control</td>
+<td>Comprehensive coverage across all failure modes; cost-efficient (most tests use mocked LLMs); CI-friendly cadence (per-PR / nightly / weekly); simulation tests catch emergent swarm behaviors</td>
+<td>Significant upfront investment to build the testing framework; mocked LLM may not catch LLM-specific regressions (mitigated by golden tests with real LLM)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen: Option B — Comprehensive automated testing pyramid.</strong></p>
+<p>The comprehensive pyramid was chosen because multi-agent systems exhibit emergent failure modes that are fundamentally invisible to manual testing or shallow automated tests. A single agent may pass all its unit tests while the swarm fails due to interaction patterns — circular delegation loops, blackboard contention under concurrent writes, or cascading timeout propagation across a delegation chain. The seven-level pyramid is explicitly designed to catch failures at every level of abstraction, from individual agent logic (unit tests with mocked LLM — zero LLM cost) through message contract conformance (JSON Schema validation catches schema drift before it reaches integration), to real infrastructure integration (Docker Compose with actual NATS/Redis/PostgreSQL + mocked LLM), prompt quality regression (golden tests with real LLM on a budgeted nightly cadence), production-scale performance (Locust/k6 load tests with configurable LLM latency simulation), infrastructure resilience (Litmus chaos tests that kill agent pods, introduce NATS delays, and simulate LLM 429 rate limits), and emergent swarm behavior (scripted multi-agent simulations that validate convergence and message counts). The MockLLM service — returning pre-recorded responses by input fingerprint — is the key cost-control mechanism: it enables unit, integration, load, and chaos tests at zero LLM cost, reserving real LLM calls for the nightly golden regression suite where non-determinism is handled by running each test 3x and taking the median score. Statistical assertions (e.g., "relevance &gt; 0.7 in 90% of runs") acknowledge LLM non-determinism without sacrificing test reliability.</p>
 <p><strong>MockLLM service:</strong> Returns pre-recorded responses by input fingerprint — zero LLM cost for most tests.</p>
 <p><strong>Non-determinism handling:</strong> Statistical assertions (e.g., "relevance &gt; 0.7 in 90% of runs").</p>
 <hr />
@@ -542,6 +959,33 @@
 </tr>
 </tbody>
 </table>
+<h3 id="options-considered_13">Options Considered</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A — No explicit controls</strong></td>
+<td>Let agents run unconstrained; monitor after the fact</td>
+<td>Simplest implementation; zero engineering effort</td>
+<td>Cost overruns on complex workflows (swarm delegation with no budget cap); latency violations for deep agent chains; no per-tenant fairness; no pre-emptive cost alerts</td>
+</tr>
+<tr>
+<td><strong>B — Framework-enforced budgets and SLOs</strong></td>
+<td>Session token budgets, per-agent latency budgets, per-tenant rate limits, and cost attribution built into Agent Runtime and Event Bus</td>
+<td>Cost predictability via enforceable token budgets; latency guarantees via time-slice allocation; per-tenant fairness through rate limits; granular cost attribution for business intelligence</td>
+<td>More controls to configure and tune; budget settings need calibration based on real traffic data</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen: Option B — Framework-enforced budgets and SLOs.</strong></p>
+<p>Framework-enforced budgets were chosen because in a multi-agent system, cost and latency compound multiplicatively — a single user request can trigger 5–10 agent invocations, each making 1–3 LLM calls, and without explicit controls, a complex swarm delegation can consume thousands of tokens with no ceiling, while a deep agent chain can blow past any reasonable latency SLO. Running unconstrained (Option A) is untenable for production e-commerce where LLM costs are the dominant expense (&gt;70% of total system cost) and interactive chatbot latency directly impacts conversion rates. The framework-enforced approach builds three interlocking control mechanisms into the core runtime. First, <strong>session token budgets</strong>: the Coordinator declares a max token budget per session, tracked in Redis, and enforced by the Agent Runtime before every LLM call — when budget is exhausted, agents receive a <code>budget_exceeded</code> signal and must return best-effort results without additional LLM calls, preventing runaway cost on edge-case conversations. Second, <strong>per-agent latency budgets</strong>: the Coordinator allocates time slices to each sub-task (with 50% buffer for LLM variability), and the Agent Runtime enforces timeouts — if an agent exceeds its budget, the circuit breaker returns a cached or degraded response rather than letting the entire workflow stall. Third, <strong>per-tenant rate limits</strong> at both the Event Bus (events/second) and LLM Gateway (tokens/minute) ensure one tenant's flash-sale traffic cannot starve others. Cost attribution records every LLM call with (model, input_tokens, output_tokens, cost_usd, agent_id, session_id, tenant_id) and exports to Prometheus → Grafana dashboards, giving engineering and business teams granular visibility into where money is spent.</p>
 <p><strong>Budget enforcement:</strong><br />
 - Session token budget tracked in Redis; enforced by Agent Runtime before each LLM call.<br />
 - Per-agent latency budget allocated by Coordinator (includes 50% buffer for LLM variability).<br />
@@ -551,6 +995,39 @@
 <hr />
 <h2 id="15-agent-registry-discovery">15. Agent Registry &amp; Discovery</h2>
 <p><strong>Architecture:</strong> NATS JetStream KV bucket as primary registry with async PostgreSQL mirror for audit.</p>
+<h3 id="options-considered_14">Options Considered</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A — Hardcoded routing table</strong></td>
+<td>Coordinator has a static mapping of capabilities to agent NATS subjects</td>
+<td>Simplest; no registry service needed</td>
+<td>Adding a new agent requires code change and redeployment; no dynamic discovery; no runtime health awareness; impossible to scale agent roster</td>
+</tr>
+<tr>
+<td><strong>B — NATS JetStream KV registry</strong></td>
+<td>AgentSpec stored in NATS KV bucket with async PostgreSQL mirror; Capability Registry as read-only projection</td>
+<td>Sub-millisecond reads from NATS KV (in-process); dynamic registration/deregistration on agent startup/shutdown; already running NATS; PostgreSQL mirror for audit and history</td>
+<td>Must build registry service and Capability Registry projection; NATS KV is eventually consistent (mitigated by heartbeat protocol)</td>
+</tr>
+<tr>
+<td><strong>C — Dedicated service registry</strong> (Consul, etcd, ZooKeeper)</td>
+<td>Use an established service discovery platform</td>
+<td>Battle-tested; rich query and health-check features</td>
+<td>Additional infrastructure to operate; capabilities are not first-class in generic service registries; must be adapted for AgentSpec semantics</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Chosen: Option B — NATS JetStream KV bucket as primary registry.</strong></p>
+<p>NATS KV was chosen because it eliminates an entire infrastructure dependency while providing the exact access patterns our Coordinator needs. We already run NATS JetStream as the Event Bus — using its built-in KV store for the Agent Registry means zero additional services to operate, zero additional network hops for capability lookups (NATS KV reads are sub-millisecond, served from the same connection the agent already maintains for event consumption), and a consistency model that aligns with our publish-subscribe architecture. Dedicated service registries like Consul or etcd (Option C) are battle-tested but generic — they treat service instances as network endpoints, not capability-bearing agents. Our Coordinator needs to answer the question "which agent can handle <code>product.search</code> with the highest confidence?" — this requires a first-class Capability Registry that maps capabilities to agent types and NATS subjects, a projection that must be rebuilt on every AgentSpec change. Building this projection on top of Consul would mean wrapping a generic KV store with custom capability-routing logic, adding operational complexity (another service to deploy, monitor, and upgrade) without any meaningful advantage over NATS KV. Hardcoded routing (Option A) was rejected outright because it creates a deployment coupling between the Coordinator and every specialist agent — every new agent type requires a Coordinator code change and redeployment, making the system brittle and impossible to scale the agent roster dynamically. The async PostgreSQL mirror provides durable audit history and enables complex queries over agent lifecycle data that NATS KV cannot support (e.g., "show me all agents that deregistered more than 3 times in the last 24 hours").</p>
 <p><strong>AgentSpec</strong> — comprehensive Pydantic model declaring:<br />
 - Identity: <code>agent_type</code>, <code>version</code>, <code>owner_team</code>, <code>tenant_scope</code><br />
 - Capabilities: list of Agent Capability objects with I/O schemas<br />
